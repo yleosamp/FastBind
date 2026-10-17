@@ -1,0 +1,101 @@
+/* Flat library rows, not native pill-shaped controls. Flex only: no CSS Grid. */
+html, body { height: 100%; }
+body { margin: 0; padding: 0; box-sizing: border-box; color: #ededed; background-color: #1f1f1f; font-family: "Adobe Clean", "Segoe UI", sans-serif; font-size: 12px; }
+* { box-sizing: border-box; }
+#panel { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }
+.toolbar { display: flex; align-items: center; flex-shrink: 0; padding: 10px 8px; border-bottom: 1px solid #2e2e2e; }
+.button { display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; color: #dcdcdc; background-color: #101010; border: 1px solid #343434; border-radius: 3px; min-height: 30px; padding: 0 12px; font-size: 11px; }
+.button:hover { background-color: #252525; border-color: #626262; }
+.button:focus { outline: 1px solid #8b8b8b; }
+.button[aria-disabled="true"] { opacity: .38; cursor: default; }
+.search-box { display: flex; align-items: center; flex: 1; min-width: 70px; height: 32px; position: relative; }
+#search { color: #dedede; background-color: #121212; border: 1px solid #3d3d3d; border-radius: 3px; min-width: 0; width: 100%; height: 32px; margin: 0; padding: 0 30px 0 10px; font-family: inherit; font-size: 12px; }
+#search:focus { outline: none; border-color: #909090; }
+.search-clear { position: absolute; right: 3px; top: 3px; width: 26px; height: 26px; min-height: 26px; padding: 0; border: 0; background-color: transparent; color: #989898; font-size: 17px; }
+.profile-button { width: 104px; min-width: 60px; height: 32px; margin-left: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toolbar-icons { display: flex; flex-shrink: 0; margin-left: 8px; }
+.tool { width: 30px; padding: 0; background-color: transparent; border-color: transparent; }
+.tool:hover { background-color: #2a2a2a; border-color: transparent; }
+.mogrt-tool { width: 87px; font-size: 10px; white-space: nowrap; }
+.mogrt-tool img { margin-right: 4px; flex-shrink: 0; }
+.save-area { padding: 12px 8px 8px; flex-shrink: 0; }
+.save-button { width: 100%; height: 44px; font-size: 12px; }
+#scroller { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px; }
+.item { background-color: #171717; border: 2px solid #414141; border-radius: 3px; margin-bottom: 5px; }
+.item-head { display: flex; align-items: center; min-height: 46px; padding: 6px 8px; }
+.selected .item-head { background-color: #202020; }
+.item-head:focus { outline: 1px solid #989898; }
+.chevron-button { width: 22px; min-height: 26px; padding: 0; border: 0; background-color: transparent; flex-shrink: 0; }
+.chevron { color: #a3a3a3; font-size: 16px; line-height: 18px; }
+.color-button { width: 23px; min-height: 26px; padding: 0; border: 0; background-color: transparent; flex-shrink: 0; }
+.color-chip { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+.no-color { background-color: transparent; border: 1px dashed #7a7a7a; }
+.item-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 9px; cursor: default; font-size: 12px; }
+.item-actions { display: flex; flex-shrink: 0; margin-left: 4px; }
+.item-actions .button { min-width: 74px; height: 31px; margin-left: 5px; }
+.item-contents { padding: 0 16px 10px 43px; }
+.group-title { color: #8c8c8c; font-size: 11px; font-weight: 600; margin: 9px 0 5px; }
+.clip-row { display: flex; align-items: center; min-height: 27px; }
+.clip-name { color: #d5d5d5; flex: 1; min-width: 0; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+.clip-track { color: #8e8e8e; font-size: 10px; padding-left: 8px; flex-shrink: 0; }
+.mogrt-note { color: #8d8d8d; font-size: 10px; padding-top: 5px; }
+.palette { display: flex; flex-wrap: wrap; padding: 4px 12px 10px 43px; border-bottom: 1px solid #292929; }
+.swatch-choice { width: 26px; min-height: 26px; padding: 0; margin: 2px; background-color: transparent; border-color: transparent; }
+.swatch-choice[aria-pressed="true"] { border-color: #cfcfcf; }
+.swatch-choice .color-chip { width: 15px; height: 15px; }
+#empty { color: #929292; font-size: 11px; line-height: 18px; text-align: center; padding: 24px 12px; }
+.footer { display: flex; flex-shrink: 0; padding: 4px 9px 6px; min-height: 23px; color: #828282; font-size: 10px; }
+#status { flex: 1; min-width: 0; }
+#status.error { color: #f09c96; }
+#status.success { color: #adbea6; }
+#version { color: #686868; flex-shrink: 0; padding-left: 10px; }
+.popup { position: absolute; top: 50px; right: 8px; width: calc(100% - 16px); max-width: 228px; max-height: calc(100% - 58px); overflow-y: auto; padding: 4px; background-color: #252525; border: 1px solid #494949; border-radius: 3px; z-index: 10; }
+.menu-entry { justify-content: flex-start; width: 100%; border: 0; border-radius: 0; background-color: transparent; min-height: 29px; padding: 0 10px; }
+.menu-entry.active { background-color: #353535; }
+#new-profile { border-top: 1px solid #414141; margin-top: 3px; }
+.menu-divider { height: 1px; background-color: #414141; margin: 5px 6px; }
+.menu-label { color: #939393; font-size: 10px; padding: 5px 10px 7px; }
+.language-switch { display: flex; padding: 0 6px 4px; }
+.language-choice { flex: 1; min-width: 0; padding: 0 6px; margin: 0 2px; }
+.language-choice[aria-pressed="true"] { background-color: #38414a; border-color: #7c919f; color: #ffffff; }
+#language-auto[aria-pressed="true"] { color: #a9c9df; }
+.menu-note { color: #909090; font-size: 10px; padding: 2px 10px 7px; }
+/* Modal footer uses the same explicit controls as the panel. Native HTML
+   buttons have inconsistent intrinsic sizing in Premiere's UXP renderer. */
+dialog { padding: 0; width: 380px; color: #ededed; background-color: #202020; border: 1px solid #505050; border-radius: 5px; }
+.dialog-shell { display: flex; flex-direction: column; width: 100%; }
+.dialog-body { flex: 1; min-height: 0; padding: 22px 22px 18px; }
+.dialog-brand { color: #8ba8bc; font-size: 9px; letter-spacing: 2px; margin-bottom: 12px; }
+.dialog-title { color: #ededed; font-size: 18px; font-weight: 600; line-height: 24px; margin-bottom: 18px; }
+dialog label { display: block; font-size: 11px; color: #b9b9b9; margin-bottom: 7px; }
+dialog input { width: 100%; height: 34px; margin: 0; padding: 0 10px; color: #ededed; background-color: #121212; border: 1px solid #626262; border-radius: 3px; font-family: inherit; font-size: 12px; }
+dialog input:focus { outline: none; border-color: #9bb8cc; }
+.dialog-actions { display: flex; justify-content: flex-end; flex-shrink: 0; padding: 14px 22px; border-top: 1px solid #353535; background-color: #252525; }
+.dialog-actions .button { height: 33px; min-height: 33px; min-width: 88px; margin-left: 8px; font-size: 12px; }
+.dialog-primary { background-color: #b5d2e5; color: #172029; border-color: #b5d2e5; }
+.dialog-primary:hover { color: #172029; background-color: #d0e6f3; border-color: #d0e6f3; }
+#dialog-hint { font-size: 11px; line-height: 17px; color: #a2a2a2; margin-top: 12px; max-height: 136px; overflow-y: auto; overflow-wrap: break-word; }
+[hidden] { display: none; }
+@media (max-width: 440px) {
+  .toolbar { flex-wrap: wrap; padding-top: 8px; padding-bottom: 8px; }
+  .search-box { flex-basis: 100%; margin-bottom: 6px; }
+  .profile-button { flex: 1; margin-left: 0; }
+  .popup { top: 82px; max-height: calc(100% - 90px); }
+}
+@media (max-width: 360px) {
+  .toolbar-icons { margin-left: 4px; }
+  .profile-button { min-width: 48px; padding: 0 6px; }
+  .tool { width: 26px; }
+  .mogrt-tool { width: 76px; font-size: 9px; }
+  .mogrt-tool img { width: 15px; height: 15px; margin-right: 3px; }
+  .item-head { flex-wrap: wrap; }
+  .item-actions { width: 100%; justify-content: flex-end; margin: 5px 0 0 0; }
+  .item-actions .button { height: 27px; min-height: 27px; min-width: 65px; }
+  .item-contents { padding-left: 31px; }
+}
+@media (max-height: 260px) {
+  .toolbar { padding-top: 5px; padding-bottom: 5px; }
+  .save-area { padding-top: 5px; padding-bottom: 5px; }
+  .save-button { height: 30px; }
+  .footer { padding-top: 2px; padding-bottom: 3px; }
+}

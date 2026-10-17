@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>FastBind</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+  <div id="panel">
+    <div class="toolbar">
+      <div id="search-box" class="search-box"><input id="search" type="text" placeholder="Buscar presets e arquivos…" aria-label="Buscar presets e arquivos…"><div id="search-clear" class="button search-clear" role="button" tabindex="0" aria-label="Limpar busca" hidden>×</div></div>
+      <div id="profile" class="button profile-button" role="button" tabindex="0" aria-label="Perfil da biblioteca" aria-expanded="false">Geral</div>
+      <div class="toolbar-icons">
+        <div id="expand-all" class="button tool" role="button" tabindex="0" title="Expandir / recolher todos" aria-label="Expandir ou recolher todos"><img src="icons/tree.svg" width="18" height="18" alt=""></div>
+        <div id="mogrt" class="button tool mogrt-tool" role="button" tabindex="0" title="Adicionar MOGRT" aria-label="Adicionar MOGRT"><img src="icons/mogrt.svg" width="18" height="18" alt=""><span>+ MOGRT</span></div>
+        <div id="open-folder" class="button tool" role="button" tabindex="0" title="Local da biblioteca" aria-label="Local da biblioteca"><img src="icons/folder.svg" width="18" height="18" alt=""></div>
+        <div id="menu-toggle" class="button tool" role="button" tabindex="0" title="Opções" aria-label="Opções" aria-expanded="false"><img src="icons/settings.svg" width="18" height="18" alt=""></div>
+      </div>
+    </div>
+    <div id="profiles-menu" class="popup" hidden>
+      <div id="profile-list"></div>
+      <div id="new-profile" class="button menu-entry" role="button" tabindex="0">+ Novo perfil</div>
+    </div>
+    <div id="menu" class="popup" hidden>
+      <div id="insert" class="button menu-entry" role="button" tabindex="0">Inserir selecionado</div>
+      <div id="rename-item" class="button menu-entry" role="button" tabindex="0">Renomear selecionado</div>
+      <div id="rename-profile" class="button menu-entry" role="button" tabindex="0">Renomear perfil</div>
+      <div id="archive-item" class="button menu-entry" role="button" tabindex="0">Remover selecionado</div>
+      <div id="restore-item" class="button menu-entry" role="button" tabindex="0">Restaurar último removido</div>
+      <div class="menu-divider"></div>
+      <div id="language-label" class="menu-label">Idioma / Language</div>
+      <div class="language-switch" role="group" aria-labelledby="language-label">
+        <div id="language-pt" class="button language-choice" role="button" tabindex="0" aria-pressed="false">Português</div>
+        <div id="language-en" class="button language-choice" role="button" tabindex="0" aria-pressed="false">English</div>
+      </div>
+      <div id="language-auto" class="button menu-entry" role="button" tabindex="0" aria-pressed="true">Automático (Premiere)</div>
+      <div id="language-detected" class="menu-note"></div>
+    </div>
+    <div class="save-area"><div id="save" class="button save-button" role="button" tabindex="0" title="Salva a seleção nativa e também o projeto atual do Premiere.">Salvar seleção</div></div>
+    <div id="scroller">
+      <div id="list" role="list" aria-label="Presets salvos"></div>
+      <div id="empty">Selecione os ajustes e o áudio na timeline.<br>Depois clique em Salvar seleção.</div>
+    </div>
+    <div class="footer"><div id="status" role="status">Duplo clique no nome para inserir.</div><div id="version">FastBind 0.3.1</div></div>
+  </div>
+  <dialog id="name-dialog">
+    <div class="dialog-shell">
+      <div class="dialog-body">
+        <div class="dialog-brand">FASTBIND</div>
+        <div id="dialog-label" class="dialog-title">Salvar seleção</div>
+        <label id="dialog-field-label" for="dialog-input">Nome do preset</label>
+        <input id="dialog-input" type="text" maxlength="100" autocomplete="off" autofocus>
+        <div id="dialog-hint"></div>
+      </div>
+      <div class="dialog-actions"><div id="dialog-cancel" class="button dialog-secondary" role="button" tabindex="0">Cancelar</div><div id="dialog-ok" class="button dialog-primary" role="button" tabindex="0">Salvar</div></div>
+    </div>
+  </dialog>
+  <script src="main.js"></script>
+</body>
+</html>

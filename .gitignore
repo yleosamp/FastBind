@@ -1,0 +1,40 @@
+# Generated packages, previews and local backups
+dist/
+backups/
+*.ccx
+*.zip
+*.log
+
+# Private working notes: never part of the public source distribution
+CONTINUAR-AQUI.md
+VALIDACAO.md
+
+# User library, project copies and diagnostic records
+payloads/
+library-a.json
+library-b.json
+operation.json
+settings.json
+last-error.json
+diagnostics.json
+*.prproj
+*.prfpset
+*.mogrt
+*.mp4
+*.mov
+*.mxf
+*.wav
+*.mp3
+*.aiff
+*.aif
+
+# Local tooling and credentials
+node_modules/
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
