@@ -49,6 +49,11 @@ body { margin: 0; padding: 0; box-sizing: border-box; color: #ededed; background
 #status.error { color: #f09c96; }
 #status.success { color: #adbea6; }
 #version { color: #686868; flex-shrink: 0; padding-left: 10px; }
+.footer-end { display: flex; align-items: flex-start; flex-shrink: 0; }
+.update-link { color: #a4cce4; font-size: 10px; cursor: pointer; padding-left: 9px; white-space: nowrap; }
+.update-link:hover { color: #d3ebfa; text-decoration: underline; }
+.update-link:focus { outline: 1px solid #8ba8bc; }
+.update-link[aria-disabled="true"] { opacity: .4; cursor: default; }
 .popup { position: absolute; top: 50px; right: 8px; width: calc(100% - 16px); max-width: 228px; max-height: calc(100% - 58px); overflow-y: auto; padding: 4px; background-color: #252525; border: 1px solid #494949; border-radius: 3px; z-index: 10; }
 .menu-entry { justify-content: flex-start; width: 100%; border: 0; border-radius: 0; background-color: transparent; min-height: 29px; padding: 0 10px; }
 .menu-entry.active { background-color: #353535; }

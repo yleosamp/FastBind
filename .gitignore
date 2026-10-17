@@ -15,6 +15,7 @@ library-a.json
 library-b.json
 operation.json
 settings.json
+updates.json
 last-error.json
 diagnostics.json
 *.prproj

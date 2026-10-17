@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2 — 2026-10-17
+
+- Discreet update badge when GitHub has a newer stable FastBind release.
+- Background release checks are cached for 24 hours; Settings also provides a manual check.
+- Opens the release page only when clicked. No automatic downloads, installation or restarts.
+- Offline, failed or rate-limited checks do not block the library or timeline workflow.
+- Narrow GitHub API network permission and documented update-check privacy behavior.
+
 ## 0.3.1 — 2026-10-17
 
 - Compact modal sizing: removes the unused area around save/confirmation content.

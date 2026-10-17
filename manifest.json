@@ -2,7 +2,7 @@
   "manifestVersion": 5,
   "id": "com.leoda.pilha.premiere",
   "name": "FastBind",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "main": "index.html",
   "host": { "app": "premierepro", "minVersion": "26.3.0" },
   "entrypoints": [
@@ -15,5 +15,9 @@
       "preferredFloatingSize": { "width": 620, "height": 700 }
     }
   ],
-  "requiredPermissions": { "localFileSystem": "fullAccess" }
+  "requiredPermissions": {
+    "localFileSystem": "fullAccess",
+    "network": { "domains": ["https://api.github.com"] },
+    "launchProcess": { "schemes": ["https"] }
+  }
 }

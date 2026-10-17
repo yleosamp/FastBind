@@ -4,6 +4,16 @@
 // This module is pure presentation: never changes package names, paths or media.
 const EN = Object.freeze({
   "FastBind": "FastBind",
+  "↑ Atualizar": "↑ Update",
+  "Versão {version} disponível. Abrir release no GitHub.": "Version {version} available. Open release on GitHub.",
+  "Verificando atualizações…": "Checking for updates…",
+  "Verificar atualizações": "Check for updates",
+  "Você já está na versão mais recente.": "You are up to date.",
+  "Não foi possível verificar agora. Tente mais tarde.": "Could not check right now. Try again later.",
+  "Nova versão: {version}": "New version: {version}",
+  "Versão instalada: {version}": "Installed version: {version}",
+  "Abrir a página oficial do FastBind no GitHub para baixar a atualização.": "Open the official FastBind GitHub page to download the update.",
+  "Não foi possível abrir o navegador. Tente novamente.": "Could not open the browser. Try again.",
   "Buscar preset ou arquivo": "Search presets or files",
   "Buscar presets e arquivos…": "Search presets and files…",
   "Limpar busca": "Clear search",

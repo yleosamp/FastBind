@@ -1,8 +1,10 @@
-/* Premiere UXP entrypoint. No network, injected scripts or keyboard emulation. */
+/* Premiere UXP entrypoint. Optional release metadata check; no remote code. */
 "use strict";
 const uxp = require("uxp"), ppro = require("premierepro");
 const C = require("./core.js"), V = require("./view.js"), I = require("./locale.js"), { Library, UxpIO } = require("./library.js"), { Host } = require("./host.js");
+const U = require("./updates.js"), manifest = require("./manifest.json");
 let io, library, host, busy = true, selected = null, ready = false, dialogActive = false, paletteFor = null;
+let updateChecker = null, updatesReady = false, updateChecking = false, updateOpening = false, updateManualError = false, updateManualDone = false;
 const locale = I.create({ preference: "auto", hostLocale: I.detectHostLocale(uxp) });
 const tr = (text, vars) => locale.t(text, vars);
 let lastStatus = "Duplo clique no nome para inserir.", lastStatusType = "";
@@ -24,7 +26,56 @@ function localize() {
   $("language-auto").setAttribute("aria-pressed", String(locale.preference === "auto"));
   $("language-detected").textContent = locale.preference === "auto" ? tr("Premiere: {language}", { language: locale.language === "pt" ? "Português" : "English" }) : tr("Idioma manual");
   if (document.documentElement) document.documentElement.setAttribute("lang", locale.language === "pt" ? "pt-BR" : "en");
-  status(lastStatus, lastStatusType);
+  status(lastStatus, lastStatusType); renderUpdates();
+}
+function availableUpdate() {
+  const state = updateChecker && updateChecker.state, release = state && state.available && state.release;
+  return release && U.releaseURL(release.tag) === release.url ? release : null;
+}
+function renderUpdates() {
+  const release = availableUpdate();
+  $("version").textContent = "FastBind " + manifest.version;
+  $("update-available").hidden = !release;
+  $("update-available").textContent = tr("↑ Atualizar");
+  $("update-available").title = release ? tr("Versão {version} disponível. Abrir release no GitHub.", { version: release.version }) : "";
+  $("update-available").setAttribute("aria-label", $("update-available").title);
+  $("check-updates").textContent = tr(updateChecking ? "Verificando atualizações…" : "Verificar atualizações");
+  $("update-state").textContent = updateManualError ? tr("Não foi possível verificar agora. Tente mais tarde.") :
+    release ? tr("Nova versão: {version}", { version: release.version }) : updateManualDone ? tr("Você já está na versão mais recente.") :
+    tr("Versão instalada: {version}", { version: manifest.version });
+}
+async function checkUpdates(force) {
+  if (!updatesReady || updateChecking || !updateChecker) return;
+  updateChecking = true; updateManualError = false; updateManualDone = false; renderUpdates(); controls();
+  try {
+    const result = await updateChecker.check({ force: !!force });
+    updateManualError = !!force && !!result.error;
+    updateManualDone = !!force && !result.error;
+  } catch (_) { updateManualError = !!force; /* Advisory only; editing stays available. */ }
+  finally { updateChecking = false; renderUpdates(); controls(); }
+}
+async function startUpdates() {
+  try {
+    updateChecker = new U.UpdateChecker({ version: manifest.version, io, fetch: typeof fetch === "function" ? ((url, options) => fetch(url, options)) : undefined });
+    await updateChecker.init(); updatesReady = true; renderUpdates(); controls();
+    // Never await the network from boot or a native editing operation.
+    checkUpdates(false);
+  } catch (_) { updateChecker = null; updatesReady = false; renderUpdates(); controls(); }
+}
+async function openUpdate() {
+  if (busy || !ready || dialogActive || updateOpening) return;
+  const release = availableUpdate(); if (!release) return;
+  updateOpening = true; controls();
+  try {
+    // URL is derived from a strict stable tag in our own repository, never an
+    // arbitrary html_url, asset link or executable returned by the network.
+    if (!uxp.shell || typeof uxp.shell.openExternal !== "function") throw new Error(tr("Não foi possível abrir o navegador. Tente novamente."));
+    const error = await uxp.shell.openExternal(release.url, tr("Abrir a página oficial do FastBind no GitHub para baixar a atualização."));
+    if (error) throw new Error(tr("Não foi possível abrir o navegador. Tente novamente."));
+  } catch (_) {
+    $("update-state").textContent = tr("Não foi possível abrir o navegador. Tente novamente.");
+    status("Não foi possível abrir o navegador. Tente novamente.", "error");
+  } finally { updateOpening = false; controls(); }
 }
 async function setLanguage(preference) {
   // Preferences are independent of the library journals: no preset migration.
@@ -66,6 +117,8 @@ function button(text, className, label, fn) {
 function controls() {
   ["save", "mogrt", "profile", "new-profile", "menu-toggle", "open-folder", "expand-all", "search", "search-clear", "language-pt", "language-en", "language-auto"].forEach(id => disable($(id), busy || !ready));
   disable($("insert"), busy || !ready || !currentItem());
+  disable($("check-updates"), busy || !ready || !updatesReady || updateChecking);
+  disable($("update-available"), busy || !ready || updateOpening || !availableUpdate());
   ["rename-item", "archive-item"].forEach(id => disable($(id), busy || !ready || !currentItem()));
   rows.forEach(ref => {
     [ref.toggle, ref.color, ref.remove].forEach(n => disable(n, busy || !ready));
@@ -256,6 +309,8 @@ async function insert() {
   else status(tr("Inserido • {count} clipes em faixas livres.", { count: result.count }) + (item.warnings ? tr(" Confira os fades nativos deste pacote.") : ""), "success");
 }
 function bind() {
+  activate($("check-updates"), () => checkUpdates(true));
+  activate($("update-available"), openUpdate);
   activate($("profile"), () => {
     const open = $("profiles-menu").hidden; closePopups();
     $("profiles-menu").hidden = !open; $("profile").setAttribute("aria-expanded", String(open));
@@ -325,8 +380,8 @@ async function boot() {
     io = await new UxpIO(uxp.storage).init();
     try { locale.setPreference((await io.readJSON("settings.json")).language); } catch (_) { /* Missing/invalid preference means follow Premiere. Library data is separate. */ }
     localize(); library = new Library(io); await library.load();
-    host = new Host(ppro, io); await host.init(); bind(); ready = true; busy = false; render();
+    host = new Host(ppro, io); await host.init(); bind(); ready = true; busy = false; render(); startUpdates();
   } catch (error) { localize(); status(tr("Não foi possível iniciar: {message}", { message: locale.message(error.message) }), "error"); busy = false; controls(); }
 }
-uxp.entrypoints.setup({ panels: { pilhaPanel: { show() { if (ready) render(); } } } });
+uxp.entrypoints.setup({ panels: { pilhaPanel: { show() { if (ready) { render(); checkUpdates(false); } } } } });
 boot();

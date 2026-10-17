@@ -45,7 +45,7 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(resol
 async function panel(options = {}) {
   const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
   const elements = Object.fromEntries([...html.matchAll(/<([a-z-]+)\b[^>]*\bid="([^"]+)"/g)].map(m => [m[2], new Element(m[1])]));
-  const calls = [], captures = [], diagnostics = [], data = { active: 'a', profiles: [{ id: 'a', name: 'Geral', items: [
+  const calls = [], captures = [], diagnostics = [], updateCalls = [], opened = [], data = { active: 'a', profiles: [{ id: 'a', name: 'Geral', items: [
     { id: 'zoom', name: 'Zoom seguro', type: 'selection', clips: [{ kind: 'video', name: 'SHAKE', adjustment: true, track: 0 },
       { kind: 'audio', name: 'CRACK 1.wav', track: 0 }, { kind: 'audio', name: 'BODY 1.wav', track: 1 }], duration: '254016000000' }
   ] }, { id: 'b', name: 'SFX', items: [] }] };
@@ -79,15 +79,27 @@ async function panel(options = {}) {
       return { id, name, type: 'selection', clips: [], warnings: options.opaque ? ['Fade não garantido'] : undefined };
     }
   }
+  class UpdateChecker {
+    constructor() { this.state = options.updateState || { available: false, release: null, error: null }; }
+    async init() { if (options.updatesInitError) throw new Error('cache unavailable'); return this.state; }
+    async check(request) {
+      updateCalls.push(request);
+      if (options.updateWait) await options.updateWait;
+      if (options.updateError) return { ...this.state, error: 'offline' };
+      return this.state;
+    }
+  }
   if (options.items) data.profiles[0].items = options.items;
   const context = { document: { getElementById: id => elements[id], createElement: tag => new Element(tag) }, console: { error() {} },
-    require(name) { if (name === 'uxp') return { host: { uiLocale: options.hostLocale === undefined ? 'pt_BR' : options.hostLocale }, entrypoints: { setup() {} } }; if (name === 'premierepro') return {};
+    require(name) { if (name === 'uxp') return { shell: { async openExternal(url, reason) { opened.push({ url, reason }); return options.openError || ''; } }, host: { uiLocale: options.hostLocale === undefined ? 'pt_BR' : options.hostLocale }, entrypoints: { setup() {} } }; if (name === 'premierepro') return {};
       if (name === './core.js') return require('../core.js'); if (name === './library.js') return { Library, UxpIO };
       if (name === './view.js') return require('../view.js');
       if (name === './locale.js') return require('../locale.js');
+      if (name === './manifest.json') return require('../manifest.json');
+      if (name === './updates.js') return { UpdateChecker, releaseURL: require('../updates.js').releaseURL };
       if (name === './host.js') return { Host }; throw new Error(name); } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8'), context);
-  await settle(); return { elements, calls, host, data, captures, diagnostics };
+  await settle(); return { elements, calls, host, data, captures, diagnostics, updateCalls, opened };
 }
 test('painel inicia enxuto; inserir só habilita depois de selecionar item', async () => {
   const f = await panel(), e = f.elements;
@@ -303,6 +315,56 @@ test('janela nativa acompanha a largura do conteúdo, sem faixa vazia lateral', 
   assert.equal(f.elements['name-dialog'].lastModalOptions.size.height, 300);
   assert.doesNotMatch(css, /\.dialog-shell\s*\{[^}]*min-height:/);
   f.elements['dialog-cancel'].click(); await settle();
+});
+
+const futureUpdate = () => ({ available: true, release: { tag: 'v99.0.0', version: '99.0.0', url: 'https://github.com/yleosamp/FastBind/releases/tag/v99.0.0' }, error: null });
+
+test('consulta de atualização pendente não bloqueia inserir, salvar ou trocar idioma', async () => {
+  let release; const f = await panel({ updateWait: new Promise(resolve => { release = resolve; }) });
+  assert.equal(f.elements.save.disabled, false); assert.equal(f.elements['check-updates'].disabled, true);
+  f.elements.list.children[0].click(); assert.equal(f.elements.insert.disabled, false);
+  f.elements.insert.click(); await settle(); assert.deepEqual(f.calls, ['zoom']);
+  f.elements['language-en'].click(); await settle(); assert.equal(f.elements.save.textContent, 'Save selection');
+  release(); await settle(); assert.equal(f.elements['check-updates'].disabled, false);
+});
+
+test('sem nova versão não há aviso; falha automática é silenciosa e manual dá retorno no menu', async () => {
+  const f = await panel({ updateError: true }), e = f.elements;
+  assert.equal(e['update-available'].hidden, true); assert.doesNotMatch(e.status.textContent, /verificar|conexão/);
+  e['check-updates'].click(); await settle();
+  assert.match(e['update-state'].textContent, /Não foi possível verificar/); assert.equal(e.save.disabled, false);
+  assert.equal(f.updateCalls[1].force, true);
+});
+
+test('aviso só abre a release validada por clique; não instala nem chama o Premiere', async () => {
+  const f = await panel({ updateState: futureUpdate() }), e = f.elements;
+  assert.equal(e['update-available'].hidden, false); assert.deepEqual(f.opened, []);
+  assert.match(e['update-available'].title, /99\.0\.0/);
+  e['update-available'].click(); await settle();
+  assert.equal(f.opened.length, 1); assert.equal(f.opened[0].url, futureUpdate().release.url);
+  assert.deepEqual(f.calls, []); assert.deepEqual(f.captures, []);
+  e['language-en'].click(); await settle(); assert.equal(e['update-available'].textContent, '↑ Update');
+});
+
+test('URL manipulada no estado nunca é aberta, mesmo com available verdadeiro', async () => {
+  const state = futureUpdate(); state.release.url = 'https://example.com/untrusted';
+  const f = await panel({ updateState: state });
+  assert.equal(f.elements['update-available'].hidden, true);
+  f.elements['update-available'].click(); await settle(); assert.deepEqual(f.opened, []);
+});
+
+test('negação do navegador não bloqueia o painel nem marca atualização como instalada', async () => {
+  const f = await panel({ updateState: futureUpdate(), openError: 'User declined' });
+  f.elements['update-available'].click(); await settle();
+  assert.match(f.elements.status.textContent, /Não foi possível abrir/); assert.equal(f.elements.save.disabled, false);
+  assert.equal(f.elements['update-available'].hidden, false); assert.deepEqual(f.calls, []);
+});
+
+test('falha ao iniciar checker não impede biblioteca, e check manual bem-sucedido é claro', async () => {
+  const broken = await panel({ updatesInitError: true }); assert.equal(broken.elements.save.disabled, false);
+  assert.equal(broken.elements['check-updates'].disabled, true);
+  const f = await panel(); f.elements['check-updates'].click(); await settle();
+  assert.equal(f.elements['update-state'].textContent, 'Você já está na versão mais recente.');
 });
 test('nomes de arquivos não viram HTML e conteúdo MOGRT não inventa faixas', async () => {
   const f = await panel({ items: [{ id: 'm', name: '<b>Modelo</b>', type: 'mogrt', file: 'C:\\A\\<img onerror=x>.mogrt' }] });

@@ -8,7 +8,8 @@ const source = path.resolve(__dirname, '..');
 const version = require('../manifest.json').version;
 const screenshotName = name => 'FastBind-' + version + '-' + name + '.png';
 const output = path.resolve(process.argv[2] || path.join(source, '..', 'dist', 'preview'));
-const modules = Object.fromEntries(['core', 'view', 'library', 'locale'].map(name => ['./' + name + '.js', fs.readFileSync(path.join(source, name + '.js'), 'utf8')]));
+const modules = Object.fromEntries(['core', 'view', 'library', 'locale', 'updates'].map(name => ['./' + name + '.js', fs.readFileSync(path.join(source, name + '.js'), 'utf8')]));
+modules['./manifest.json'] = fs.readFileSync(path.join(source, 'manifest.json'), 'utf8');
 const clip = (kind, name, track = 0) => ({ kind, name, track, adjustment: kind === 'video' });
 const item = (id, name, color, clips) => ({ id, name, color, type: 'selection', duration: '508032000000', clips });
 const data = { active: 'main', profiles: [{ id: 'main', name: 'MAIN', items: [
@@ -30,18 +31,27 @@ const data = { active: 'main', profiles: [{ id: 'main', name: 'MAIN', items: [
   try {
     const page = await browser.newPage({ viewport: { width: 1050, height: 1100 }, deviceScaleFactor: 1 });
     const errors = []; page.on('pageerror', e => errors.push(e.message));
-    await page.addInitScript(({ modules, data }) => {
+    await page.addInitScript(({ modules, data, version }) => {
       const cache = {}, io = { files: new Map(), async exists(n) { return this.files.has(n); },
         async readJSON(n) { if (!this.files.has(n)) throw new Error('missing'); return JSON.parse(this.files.get(n)); },
         async writeJSON(n, v) { this.files.set(n, JSON.stringify(v)); } };
       function load(name) {
         if (cache[name]) return cache[name].exports;
         const module = { exports: {} }; cache[name] = module;
+        if (name === './manifest.json') { module.exports = JSON.parse(modules[name]); return module.exports; }
         new Function('require', 'module', 'exports', modules[name])(load, module, module.exports); return module.exports;
       }
       const core = load('./core.js'), RealLibrary = load('./library.js').Library;
       io.files.set('library-a.json', JSON.stringify({ schema: 1, revision: 1, data, check: core.textChecksum(JSON.stringify(data)) }));
       window.previewCalls = [];
+      window.previewOpened = []; window.previewRequests = [];
+      window.previewRelease = { tag_name: 'v' + version, draft: false, prerelease: false };
+      window.fetch = async function (url, options) {
+        if (this !== window) throw new Error('Host fetch must retain its global receiver');
+        if (url !== 'https://api.github.com/repos/yleosamp/FastBind/releases/latest') throw new Error('Unexpected preview request');
+        window.previewRequests.push({ url, credentials: options.credentials });
+        return { ok: true, status: 200, async json() { return window.previewRelease; } };
+      };
       window.previewSettings = () => io.readJSON('settings.json');
       class Library extends RealLibrary { constructor() { super(io); } }
       class UxpIO {
@@ -56,7 +66,7 @@ const data = { active: 'main', profiles: [{ id: 'main', name: 'MAIN', items: [
         async insert(item) { window.previewCalls.push(item.id); return { count: item.clips ? item.clips.length : 1 }; }
       }
       window.require = name => {
-        if (name === 'uxp') return { entrypoints: { setup() {} }, storage: {}, host: { uiLocale: 'pt_BR' } };
+        if (name === 'uxp') return { shell: { async openExternal(url) { window.previewOpened.push(url); return ''; } }, entrypoints: { setup() {} }, storage: {}, host: { uiLocale: 'pt_BR' } };
         if (name === 'premierepro') return {};
         if (name === './library.js') return { Library, UxpIO };
         if (name === './host.js') return { Host };
@@ -65,9 +75,13 @@ const data = { active: 'main', profiles: [{ id: 'main', name: 'MAIN', items: [
       HTMLDialogElement.prototype.uxpShowModal = function () {
         this.showModal(); return new Promise(resolve => this.addEventListener('close', () => resolve(this.returnValue), { once: true }));
       };
-    }, { modules, data });
+    }, { modules, data, version });
     await page.goto(pathToFileURL(path.join(source, 'index.html')).href);
     await page.locator('.item').first().waitFor();
+    await page.waitForFunction(() => document.querySelector('#check-updates').getAttribute('aria-disabled') === 'false');
+    assert.equal(await page.locator('#update-available').isVisible(), false);
+    assert.equal((await page.evaluate(() => window.previewRequests)).length, 1);
+    assert.deepEqual(await page.evaluate(() => window.previewOpened), []);
     for (const id of ['slow', 'hit', 'bass', 'vignette', 'big-hit']) await page.locator('[data-id="' + id + '"] .chevron-button').click();
     await page.screenshot({ path: path.join(output, screenshotName('ampla')) });
     await page.locator('[data-id="hit"] .color-button').click();
@@ -118,6 +132,25 @@ const data = { active: 'main', profiles: [{ id: 'main', name: 'MAIN', items: [
     await page.screenshot({ path: path.join(output, screenshotName('save-en')) });
     await page.locator('#dialog-cancel').click();
     await page.locator('#name-dialog[open]').waitFor({ state: 'detached' });
+    // Future-release metadata is simulated, never fetched from a real service.
+    await page.evaluate(() => { window.previewRelease = { tag_name: 'v99.0.0', draft: false, prerelease: false }; });
+    await page.locator('#menu-toggle').click(); await page.locator('#check-updates').click();
+    await page.locator('#update-available').waitFor({ state: 'visible' });
+    assert.deepEqual(await page.evaluate(() => window.previewOpened), []);
+    await page.locator('#menu-toggle').click();
+    for (const [name, width, height] of [['update-lateral', 320, 760], ['update-minima', 230, 180], ['update-horizontal', 1040, 240]]) {
+      await page.setViewportSize({ width, height });
+      const metrics = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, height: document.body.scrollHeight }));
+      assert(metrics.width <= width && metrics.height <= height, 'Update notice must not overflow ' + name);
+      const footerBox = await page.locator('#update-available').boundingBox();
+      assert(footerBox && footerBox.x >= 0 && footerBox.x + footerBox.width <= width && footerBox.y + footerBox.height <= height);
+      await page.screenshot({ path: path.join(output, screenshotName(name)) });
+    }
+    await page.locator('#update-available').click();
+    assert.deepEqual(await page.evaluate(() => window.previewOpened), ['https://github.com/yleosamp/FastBind/releases/tag/v99.0.0']);
+    assert.equal((await page.evaluate(() => window.previewRequests)).length, 2);
+    assert((await page.evaluate(() => window.previewRequests)).every(r => r.credentials === 'omit'));
+    await page.setViewportSize({ width: 440, height: 700 });
     await page.locator('[data-id="hit"] .row-insert').click();
     await page.waitForFunction(() => window.previewCalls.length === 1);
     assert.deepEqual(await page.evaluate(() => window.previewCalls), ['hit']); assert.deepEqual(errors, []);
