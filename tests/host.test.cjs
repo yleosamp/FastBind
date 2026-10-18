@@ -13,10 +13,11 @@ function clip(kind = 'video', track = 0, start = '0', end = '100', extra = {}) {
 const track = (clips = [], extra = {}) => Object.assign({ clips, muted: false, transitions: [] }, extra);
 const snapshot = (video = [], audio = []) => ({ video, audio, transitions: [] });
 class IO {
-  constructor() { this.files = new Map(); this.onWrite = null; }
+  constructor() { this.files = new Map(); this.onWrite = null; this.diagnostics = []; }
   async exists(n) { return this.files.has(n); }
   async readJSON(n) { if (!this.files.has(n)) throw new Error('missing'); return JSON.parse(this.files.get(n)); }
   async writeJSON(n, v) { if (this.onWrite) await this.onWrite(n, v); this.files.set(n, JSON.stringify(v)); }
+  async recordDiagnostic(error, scope) { this.diagnostics.push({ code: error.code, evidence: error.evidence, scope }); }
 }
 function fixture() {
   const io = new IO(), sequence = { guid: 'edit', name: 'Edição', playhead: '0',
@@ -90,25 +91,65 @@ test('mover playhead durante preparação cancela sem inserir no tempo antigo', 
   await assert.rejects(f.host.insert(f.asset, () => {}), /playhead mudou/);
   assert.equal(f.calls.length, 0);
 });
-test('resultado incorreto bloqueia só a sequência afetada e Undo libera automaticamente', async () => {
-  const f = fixture(), before = clone(f.sequence.state), originalClone = f.host.clone.bind(f.host);
+test('diferença pós-commit é diagnóstico sem bloquear nova inserção na mesma sequência', async () => {
+  const f = fixture(), originalClone = f.host.clone.bind(f.host);
   f.host.clone = (...args) => { originalClone(...args); f.sequence.state.video[0].clips[0].end = '50'; };
-  await assert.rejects(f.host.insert(f.asset, () => {}), /verificação/);
+  const result = await f.host.insert(f.asset, () => {});
+  assert.equal(result.verified, false); assert.equal(result.warning, undefined);
   assert.equal(f.host.review.phase, 'unverified');
+  assert.equal(f.io.diagnostics[0].code, 'PILHA_INSERT_MISMATCH');
+  assert(f.io.diagnostics[0].evidence.missing.length);
   const count = f.calls.length;
-  await assert.rejects(f.host.insert(f.asset, () => {}), error => error.code === 'PILHA_RECOVERY_REQUIRED');
-  assert.equal(f.calls.length, count);
+  // Reopening and manual changes/partial Undo must not resurrect a latch.
   const reopened = new Host(f.host.ppro, f.io); reopened.stableScan = f.host.stableScan.bind(f.host); await reopened.init();
-  assert.equal(reopened.review.phase, 'unverified');
-  f.sequence.state = before;
-  // Premiere can retain newly created empty tracks after Undo.
-  f.sequence.state.video.push(track()); f.sequence.state.audio.push(track());
-  assert.equal((await reopened.reconcile()).state, 'clear'); assert.equal(reopened.review, null);
-  assert.equal((await f.io.readJSON('operation.json')).phase, 'cancelled');
-  assert.equal((await f.host.reconcile()).state, 'clear');
-  f.host.clone = originalClone;
-  await f.host.insert(f.asset, () => {});
+  assert.equal(reopened.recoveryState.state, 'unverified');
+  reopened.audioQuantum = f.host.audioQuantum;
+  reopened.template = f.host.template;
+  const beforeNext = clone(f.sequence.state);
+  const next = await reopened.insert(f.asset, () => {});
   assert.equal(f.calls.length, count + 2);
+  assert.equal(next.video, 2); assert.equal(next.audio, 2);
+  assert.deepEqual(f.sequence.state.video.slice(0, 2), beforeNext.video);
+  assert.deepEqual(f.sequence.state.audio.slice(0, 2), beforeNext.audio);
+  const op = await f.io.readJSON('operation.json');
+  assert.equal(op.phase, 'verified'); assert.equal(op.unresolved[0].phase, 'unverified');
+});
+
+test('journal legado incompleto não exige Undo exato para inserir após alterações manuais', async () => {
+  const f = fixture();
+  await f.io.writeJSON('operation.json', { phase: 'unverified', operationId: 'old', date: 'old',
+    projectId: f.project.guid, sequenceId: f.sequence.guid, before: snapshot(), error: 'legacy mismatch' });
+  f.sequence.state.video.push(track([clip('video', 1)]));
+  f.sequence.state.audio.push(track([clip('audio', 1)]));
+  const before = clone(f.sequence.state);
+  await f.host.init();
+  assert.equal(f.host.recoveryState.state, 'unverified');
+  const r = await f.host.insert(f.asset, () => {});
+  assert.equal(r.video, 2); assert.equal(r.audio, 2);
+  assert.deepEqual(f.sequence.state.video.slice(0, 2), before.video);
+  assert.deepEqual(f.sequence.state.audio.slice(0, 2), before.audio);
+  assert.equal(f.host.review.operationId, 'old');
+});
+
+test('falha de leitura depois do commit não pede reinserção e não trava próxima tentativa', async () => {
+  const f = fixture(), scan = f.host.stableScan.bind(f.host);
+  f.host.stableScan = async seq => { if (f.calls.length) throw new Error('readback indisponível'); return scan(seq); };
+  const r = await f.host.insert(f.asset, () => {});
+  assert.equal(r.verified, false); assert.equal(f.calls.length, 2);
+  assert.equal(f.host.lastOperation.phase, 'unverified');
+  f.host.stableScan = scan;
+  const next = await f.host.insert(f.asset, () => {});
+  assert.equal(next.video, 2); assert.equal(next.audio, 2);
+  assert.equal(f.calls.length, 4);
+});
+
+test('diagnóstico que falha não transforma commit aceito em erro no painel', async () => {
+  const f = fixture(), cloneNative = f.host.clone.bind(f.host);
+  f.host.clone = (...args) => { cloneNative(...args); f.sequence.state.video[1].clips[0].end = '101'; };
+  f.io.recordDiagnostic = async () => { throw new Error('diagnóstico indisponível'); };
+  const r = await f.host.insert(f.asset, () => {});
+  assert.equal(r.verified, false); assert.equal(r.warning, undefined);
+  assert.equal(f.calls.length, 2);
 });
 test('journal antigo sem contexto ou quebrado fica registrado sem bloqueio global', async () => {
   const io = new IO(); await io.writeJSON('operation.json', { phase: 'pending' });
@@ -123,7 +164,8 @@ test('journal verificado não cria bloqueio após reiniciar', async () => {
 test('falha de confirmação não pede nova inserção quando readback exato comprova o commit', async () => {
   const f = fixture(); f.io.onWrite = async (n, v) => { if (v.phase === 'verified') throw new Error('falha de confirmação'); };
   const result = await f.host.insert(f.asset, () => {});
-  assert.equal(result.count, 2); assert.match(result.warning, /confirmada/);
+  assert.equal(result.count, 2); assert.equal(result.warning, undefined);
+  assert.equal(f.io.diagnostics[0].scope, 'insert-readback');
   assert.equal(f.host.review, null);
   assert.equal(C.allClips(f.sequence.state).length, 4);
   // The durable pending record has its plan, so restart recovers without a
@@ -171,10 +213,10 @@ test('pending legado usa caminho Win32 normalizado e não confunde outro projeto
   const h = new Host(f.host.ppro, f.io); h.stableScan = f.host.stableScan.bind(f.host); await h.init();
   assert(h.review); assert.equal(h.recoveryState.state, 'other-sequence');
 });
-test('falha parcial preserva pendência ao inserir em outra sequência e após reiniciar', async () => {
+test('diferença registrada é preservada ao inserir em outra sequência e após reiniciar', async () => {
   const f = fixture(), original = f.sequence, before = clone(original.state), cloneNative = f.host.clone.bind(f.host);
   f.host.clone = (...args) => { cloneNative(...args); original.state.video[0].clips[0].end = '50'; };
-  await assert.rejects(f.host.insert(f.asset, () => {}), /verificação/);
+  assert.equal((await f.host.insert(f.asset, () => {})).verified, false);
   const other = { ...original, guid: 'other-edit', state: before };
   f.project.active = other; f.host.clone = cloneNative;
   await f.host.insert(f.asset, () => {});
@@ -183,7 +225,7 @@ test('falha parcial preserva pendência ao inserir em outra sequência e após r
   const h = new Host(f.host.ppro, f.io); h.stableScan = f.host.stableScan.bind(f.host); await h.init();
   assert.equal(h.recoveryState.state, 'other-sequence');
   f.project.active = original;
-  assert.equal((await h.reconcile()).state, 'blocked');
+  assert.equal((await h.reconcile()).state, 'unverified');
   original.state = clone(op.unresolved[0].before);
   assert.equal((await h.reconcile()).state, 'clear');
   assert.equal((await f.io.readJSON('operation.json')).unresolved.length, 0);
@@ -193,11 +235,11 @@ test('Undo parcial que muda clipe antigo ou transição não é aprovado por con
   await f.io.writeJSON('operation.json', { phase: 'pending', projectId: f.project.guid,
     sequenceId: f.sequence.guid, date: 'partial', before });
   f.sequence.state.video[0].clips[0].end = '100';
-  await f.host.init(); assert.equal(f.host.recoveryState.state, 'blocked');
+  await f.host.init(); assert.equal(f.host.recoveryState.state, 'unverified');
   f.sequence.state = clone(before); f.sequence.state.transitions.push({ kind: 'video', track: 0, start: '0', end: '1' });
-  assert.equal((await f.host.reconcile()).state, 'blocked');
+  assert.equal((await f.host.reconcile()).state, 'unverified');
   f.sequence.state = clone(before); f.sequence.state.audio[0].opaqueTransitions = 1;
-  assert.equal((await f.host.reconcile()).state, 'blocked');
+  assert.equal((await f.host.reconcile()).state, 'unverified');
 });
 test('journal inclui plano antes da transação e fonte é relida depois da preparação', async () => {
   const f = fixture(), scan = f.host.stableScan.bind(f.host); let epoch = 0;

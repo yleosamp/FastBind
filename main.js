@@ -305,7 +305,8 @@ async function ask(label, initial, hint, confirmation) {
 async function insert() {
   const item = currentItem(); if (!item) return;
   const result = await host.insert(item, status);
-  if (result.warning) status(result.warning, "error");
+  if (result.verified === false) status("Inserção enviada ao Premiere.");
+  else if (result.warning) status(result.warning);
   else status(tr("Inserido • {count} clipes em faixas livres.", { count: result.count }) + (item.warnings ? tr(" Confira os fades nativos deste pacote.") : ""), "success");
 }
 function bind() {

@@ -46,9 +46,8 @@ class Host {
     await this.reconcile();
   }
   async reconcile(context) {
-    // Undo and native failures are observed, never simulated with another Undo
-    // or a retry. Only the affected project/sequence can need recovery; saving
-    // selections and working in another sequence must not acquire a global latch.
+    // Diagnostic bookkeeping only: an old/partial readback must never latch
+    // insertion, require Undo, or automatically retry a native transaction.
     if (!this.unresolved.length) return (this.recoveryState = { state: "clear", resolved: 0, pending: 0 });
     let ctx;
     try { ctx = context || await this.active(); }
@@ -59,7 +58,7 @@ class Host {
     if (!candidates.length) return (this.recoveryState = { state: "other-sequence", resolved: 0, pending: 0 });
     let data;
     try { data = (await this.stableScan(ctx.sequence)).data; }
-    catch (_) { return (this.recoveryState = { state: "blocked", resolved: 0, pending: candidates.length }); }
+    catch (_) { return (this.recoveryState = { state: "unverified", resolved: 0, pending: candidates.length }); }
     const resolved = new Map();
     for (const op of candidates) {
       try {
@@ -84,11 +83,7 @@ class Host {
       this.updateReview();
     }
     const pending = this.unresolved.filter(matches).length;
-    return (this.recoveryState = { state: pending ? "blocked" : "clear", resolved: resolved.size, pending });
-  }
-  recoveryError() {
-    const error = new Error("A inserção anterior ficou incompleta nesta sequência. Use Ctrl+Z para desfazê-la e tente novamente; o FastBind reconhece o desfazer automaticamente.");
-    error.code = "PILHA_RECOVERY_REQUIRED"; return error;
+    return (this.recoveryState = { state: pending ? "unverified" : "clear", resolved: resolved.size, pending });
   }
   async freshTarget(ctx) {
     const project = await this.ppro.Project.getActiveProject();
@@ -448,7 +443,9 @@ class Host {
   }
   async insert(asset, progress) {
     const ctx = await this.active(), playhead = C.tick((await ctx.sequence.getPlayerPosition()).ticks);
-    if ((await this.reconcile(ctx)).state === "blocked") throw this.recoveryError();
+    // Historical journals do not authorize or block this new operation.
+    // Occupancy/locks/identity are checked from fresh native snapshots below.
+    await this.reconcile(ctx);
     const template = asset.type === "mogrt" ? await this.mogrtTemplate(ctx, asset, progress) : await this.template(ctx, asset, progress);
     const prepared = await this.assertActive(ctx);
     ctx.project = prepared.project; ctx.sequence = prepared.sequence;
@@ -467,7 +464,7 @@ class Host {
       sequenceName: ctx.sequence.name, playhead, before: before.data, plan, expectedTransitions, unresolved: this.unresolved.slice() };
     await this.io.writeJSON("operation.json", pending);
     this.lastOperation = pending;
-    let attempted = false;
+    let attempted = false, committed = false;
     try {
       progress("Inserindo em faixas livres…");
       // Importing/organizing library sequences and native Undo can invalidate
@@ -484,11 +481,12 @@ class Host {
       if (JSON.stringify(before.data) !== JSON.stringify(fresh.data)) throw new Error("A timeline mudou enquanto o pacote era preparado. Tente novamente.");
       attempted = true;
       this.clone(ctx.project, ctx.sequence, source.refs, plan.placements, "FastBind: inserir " + asset.name);
+      committed = true;
       const after = await this.stableScan(ctx.sequence);
       const wantedTransitions = fresh.data.transitions.concat(expectedTransitions).map(t => JSON.stringify(t)).sort();
       const actualTransitions = after.data.transitions.map(t => JSON.stringify(t)).sort();
       if (!C.verify(fresh.data, after.data, plan.expected) || JSON.stringify(wantedTransitions) !== JSON.stringify(actualTransitions)) {
-        const error = new Error("O resultado nativo não passou na verificação. Use Ctrl+Z para desfazer a inserção do FastBind e tente novamente; a recuperação será automática.");
+        const error = new Error("A conferência posterior retornou diferenças no resultado nativo.");
         error.code = "PILHA_INSERT_MISMATCH";
         error.evidence = Object.assign(C.verificationDiff(fresh.data, after.data, plan.expected), { wantedTransitions, actualTransitions, audioSampleTicks });
         throw error;
@@ -498,7 +496,7 @@ class Host {
       this.lastOperation = verified; this.updateReview();
       return { count: clips.length, video: plan.bases.video, audio: plan.bases.audio };
     } catch (error) {
-      const outcome = Object.assign({}, pending, { phase: attempted ? "unverified" : "cancelled", error: String(error.message || error) });
+      const outcome = Object.assign({}, pending, { phase: attempted ? "unverified" : "cancelled", error: String(error.message || error), evidence: error.evidence || null });
       if (attempted) {
         this.cache.clear();
         try {
@@ -511,9 +509,17 @@ class Host {
       outcome.unresolved = this.unresolved.filter(op => operationKey(op) !== operationKey(outcome));
       try { await this.io.writeJSON("operation.json", outcome); } catch (_) { /* pending record stays recoverable */ }
       this.lastOperation = outcome; this.updateReview();
-      if (outcome.phase === "verified") return { count: clips.length, video: plan.bases.video, audio: plan.bases.audio,
-        warning: "A inserção foi confirmada na timeline. O Premiere ou o registro de confirmação emitiu um aviso; não é necessário inserir novamente.",
-        warningCode: "PILHA_CONFIRMED_WITH_WARNING", warningDetail: String(error.message || error) };
+      // The user explicitly requested non-blocking post-insert checks. Keep
+      // exact evidence, never label a mismatch verified, and never tell the
+      // user to undo/reinsert a transaction that Premiere already accepted.
+      if (outcome.phase === "verified" || (committed && outcome.phase === "unverified")) {
+        try { if (typeof this.io.recordDiagnostic === "function") await this.io.recordDiagnostic(error, "insert-readback"); } catch (_) {}
+        const result = { count: clips.length, video: plan.bases.video, audio: plan.bases.audio };
+        if (outcome.phase !== "verified") result.verified = false;
+        return result;
+      }
+      // Actual preparation/action/commit refusals still report their error.
+      // They do not impose a persistent lock on the user's next attempt.
       throw error;
     }
   }

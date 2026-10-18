@@ -1,6 +1,6 @@
 {
   "name": "fastbind-premiere",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "license": "MIT",
   "description": "Compact adjustment, audio and MOGRT library for Premiere UXP",

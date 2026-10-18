@@ -69,7 +69,7 @@ async function panel(options = {}) {
   class Host {
     constructor() { this.review = options.review || null; host = this; }
     async init() {}
-    async insert(item) { if (this.review) throw new Error('Revisão pendente'); calls.push(item.id); if (options.wait) await options.wait; return { count: 2 }; }
+    async insert(item) { if (options.insertError) throw new Error(options.insertError); calls.push(item.id); if (options.wait) await options.wait; return options.insertResult || { count: 2 }; }
     async saveSelection(id, name, status, consent) {
       captures.push(consent);
       if (options.opaque && (!consent || consent.allowOpaqueTransitions !== 'same-selection')) {
@@ -127,12 +127,33 @@ test('trocar perfil mostra somente biblioteca daquele perfil', async () => {
   e.profile.click(); e['profile-list'].children[1].click(); await settle();
   assert.equal(f.data.active, 'b'); assert.equal(e.list.children.length, 0); assert.equal(e.insert.disabled, true);
 });
-test('journal pendente não desabilita globalmente o painel nem captura', async () => {
+test('journal pendente não bloqueia inserir nem capturar e não exibe pedido de revisão', async () => {
   const f = await panel({ review: { phase: 'pending' } }), e = f.elements;
   e.list.children[0].click(); assert.equal(e.insert.disabled, false); assert.equal(e.save.disabled, false);
-  e.list.children[0].children[0].dispatch('dblclick'); await settle(); assert.equal(f.calls.length, 0);
+  e.list.children[0].children[0].dispatch('dblclick'); await settle(); assert.equal(f.calls.length, 1);
+  assert.equal(e.status.className, 'success'); assert.doesNotMatch(e.status.textContent, /Ctrl\+Z|revisão|incompleta/);
   assert.equal(e.save.disabled, false); assert.equal(e.review, undefined);
   await startCapture(f); assert.equal(f.captures.length, 1);
+});
+
+test('readback não verificado é neutro em PT e EN e continua permitindo inserir', async () => {
+  for (const language of ['pt', 'en']) {
+    const f = await panel({ insertResult: { count: 2, verified: false }, hostLocale: language === 'en' ? 'en_US' : 'pt_BR' });
+    const e = f.elements;
+    e.list.children[0].click(); e.insert.click(); await settle();
+    assert.equal(e.status.className, '');
+    assert.equal(e.status.textContent, language === 'en' ? 'Insertion sent to Premiere.' : 'Inserção enviada ao Premiere.');
+    assert.equal(e.insert.disabled, false);
+    e.insert.click(); await settle(); assert.equal(f.calls.length, 2);
+    assert.equal(f.diagnostics.length, 0);
+  }
+});
+
+test('falhas reais da ação ainda são informadas sem bloqueio persistente no painel', async () => {
+  const f = await panel({ insertError: 'Premiere recusou a operação.' });
+  const e = f.elements; e.list.children[0].click(); e.insert.click(); await settle();
+  assert.equal(e.status.className, 'error'); assert.match(e.status.textContent, /recusou/);
+  assert.equal(e.insert.disabled, false);
 });
 test('biblioteca quebrada falha fechada, sem habilitar operações', async () => {
   const f = await panel({ broken: true }), e = f.elements;
@@ -247,11 +268,11 @@ test('busca pelo nome de áudio encontra o preset e preserva a rolagem ao redese
   f.elements.search.value = 'body 1.wav'; f.elements.search.dispatch('input');
   assert.equal(f.elements.list.children.length, 1); assert.equal(f.elements.scroller.scrollTop, 200);
 });
-test('expandir todos não ativa presets; recuperação real é delegada ao host, sem travar UI', async () => {
+test('expandir todos não ativa presets; registro não verificado não trava inserir', async () => {
   const f = await panel({ review: { phase: 'unverified' } }); f.elements['expand-all'].click();
   assert.equal(f.elements.list.children[0].children[2].hidden, false);
   assert.equal(head(f).children[3].children[0].disabled, false);
-  head(f).children[3].children[0].click(); await settle(); assert.deepEqual(f.calls, []);
+  head(f).children[3].children[0].click(); await settle(); assert.deepEqual(f.calls, ['zoom']);
   f.elements['expand-all'].click(); assert.equal(f.elements.list.children[0].children[2].hidden, true);
 });
 

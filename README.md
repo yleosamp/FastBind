@@ -4,7 +4,7 @@ A small, open-source library panel for Adobe Premiere Pro. Save adjustment layer
 
 **Experimental · Premiere Pro 26.3+ · English / Português · MIT**
 
-[Download CCX — Windows & macOS](https://github.com/yleosamp/FastBind/releases/download/v0.3.2/FastBind-0.3.2.ccx) · [Releases](https://github.com/yleosamp/FastBind/releases/latest) · [English](#install) · [Português](#português) · [Changelog](CHANGELOG.md) · [Privacy](docs/PRIVACY.md)
+[Download CCX — Windows & macOS](https://github.com/yleosamp/FastBind/releases/download/v0.3.3/FastBind-0.3.3.ccx) · [Releases](https://github.com/yleosamp/FastBind/releases/latest) · [English](#install) · [Português](#português) · [Changelog](CHANGELOG.md) · [Privacy](docs/PRIVACY.md)
 
 ![FastBind panel with example packages](docs/images/fastbind.png)
 
@@ -47,7 +47,7 @@ The playhead position inside a selection becomes its insertion anchor; if the pl
 - Packages retain native Premiere clips/effects through an internal library sequence and a saved project copy. They are **not** `.prfpset` effect presets applied directly to a selected clip.
 - Original audio/video files, fonts, LUTs and third-party effects are **not collected**. Keep those dependencies installed and at their existing locations. MOGRT files themselves are copied into the library.
 - Unknown native fades/transitions may require confirmation when saving. They cannot always be inspected or reproduced through the available API. Masks, links, easing and third-party effect compatibility are not universally verified.
-- If an insertion cannot be verified, inspect the timeline and undo the incomplete operation before trying again. FastBind recognizes an exact restored state automatically; it does not undo or retry on your behalf.
+- Old or unverified insertion records never block another insert or require Undo. After Premiere accepts a transaction, post-insert readback differences remain local diagnostics only, without a red error or retry prompt. An unverified result is not marked verified. Preparation, occupancy and actual native commit errors still report normally; FastBind never undoes or retries automatically.
 - Global keyboard shortcuts per package are not implemented. Use Insert or double-click.
 
 The folder button shows the local library location. Back up that **entire folder**, not only its JSON files. Saved project copies and diagnostics may contain private project information; do not upload your library when reporting a bug. See [Privacy](docs/PRIVACY.md).
@@ -98,5 +98,7 @@ Selecione os adjustment layers e áudios na timeline, clique **Salvar seleção*
 **+ MOGRT** adiciona templates. O seletor de perfis organiza bibliotecas separadas. A setinha mostra os clipes salvos; o quadradinho muda a cor. A busca encontra nomes de pacotes e de clipes. **Remover** arquiva o item; a engrenagem permite restaurar o último removido e trocar o idioma.
 
 O pacote é inserido acima do vídeo ocupado e abaixo do áudio ocupado, sem ripple intencional. Revise o resultado e mantenha backups: nenhuma integração está imune a falhas do Premiere.
+
+Registros antigos ou não verificados não travam mais o próximo insert nem exigem Ctrl+Z. Quando o Premiere aceita a inserção, diferenças na conferência posterior ficam somente no diagnóstico local, sem erro vermelho ou pedido para reinserir. Isso não transforma um resultado não verificado em verificado. As checagens de faixas ocupadas e erros reais de preparação/execução continuam; não há Undo nem repetição automática.
 
 **Importante:** mídias originais, fontes e plugins externos continuam sendo necessários. A biblioteca não é um pacote portátil completo, nem um importador de presets `.prfpset`. Ela guarda cópias de projetos que podem conter informações privadas. Faça backup da pasta completa mostrada no ícone de pasta e não publique esses arquivos. Leia [Privacidade](docs/PRIVACY.md#português).

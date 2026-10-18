@@ -62,8 +62,8 @@ const data = { active: 'main', profiles: [{ id: 'main', name: 'MAIN', items: [
         async recordDiagnostic() {}
       }
       class Host {
-        constructor() { this.review = null; } async init() {}
-        async insert(item) { window.previewCalls.push(item.id); return { count: item.clips ? item.clips.length : 1 }; }
+        constructor() { this.review = { phase: 'unverified' }; } async init() {}
+        async insert(item) { window.previewCalls.push(item.id); return window.previewInsertResult || { count: item.clips ? item.clips.length : 1 }; }
       }
       window.require = name => {
         if (name === 'uxp') return { shell: { async openExternal(url) { window.previewOpened.push(url); return ''; } }, entrypoints: { setup() {} }, storage: {}, host: { uiLocale: 'pt_BR' } };
@@ -154,6 +154,20 @@ const data = { active: 'main', profiles: [{ id: 'main', name: 'MAIN', items: [
     await page.locator('[data-id="hit"] .row-insert').click();
     await page.waitForFunction(() => window.previewCalls.length === 1);
     assert.deepEqual(await page.evaluate(() => window.previewCalls), ['hit']); assert.deepEqual(errors, []);
+    await page.waitForFunction(() => document.querySelector('#status').className === 'success');
+    await page.evaluate(() => { window.previewInsertResult = { count: 2, verified: false }; });
+    await page.locator('[data-id="hit"] .row-insert').click();
+    await page.waitForFunction(() => document.querySelector('#status').textContent === 'Insertion sent to Premiere.');
+    assert.equal(await page.locator('#status').getAttribute('class'), '');
+    assert.equal(await page.locator('[data-id="hit"] .row-insert').getAttribute('aria-disabled'), 'false');
+    await page.screenshot({ path: path.join(output, screenshotName('nonblocking-en')) });
+    await page.locator('#menu-toggle').click(); await page.locator('#language-pt').click();
+    await page.locator('[data-id="hit"] .row-insert').click();
+    await page.waitForFunction(() => document.querySelector('#status').textContent === 'Inserção enviada ao Premiere.');
+    assert.equal(await page.locator('#status').getAttribute('class'), '');
+    assert.deepEqual(await page.evaluate(() => window.previewCalls), ['hit', 'hit', 'hit']);
+    assert.deepEqual(errors, []);
+    await page.screenshot({ path: path.join(output, screenshotName('nonblocking-pt')) });
     console.log(JSON.stringify({ screenshots: output, errors, nativePremiereUsed: false, actualMainJs: true }));
   } finally { await browser.close(); }
 })().catch(e => { console.error(e); process.exitCode = 1; });

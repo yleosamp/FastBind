@@ -47,7 +47,7 @@ test("English presentation covers backend errors, progress and composed status",
   assert.equal(en.t(" Confira os fades nativos deste pacote."), " Check this package's native fades.");
   assert.equal(en.t(" — Faça backup desta pasta para guardar seus perfis e pacotes."), " — Back up this folder to keep your profiles and packages safe.");
   assert.equal(en.t("Não foi possível iniciar: {message}", { message: "Test" }), "Could not start: Test");
-  assert.match(en.message("A inserção anterior ficou incompleta nesta sequência. Use Ctrl+Z para desfazê-la e tente novamente; o FastBind reconhece o desfazer automaticamente."), /^The previous insertion/);
+  assert.equal(en.message("Inserção enviada ao Premiere."), "Insertion sent to Premiere.");
   assert.match(en.message("A inserção foi confirmada na timeline. O Premiere ou o registro de confirmação emitiu um aviso; não é necessário inserir novamente."), /you do not need to insert again\.$/);
 });
 test("dynamic errors preserve special characters in names and disk paths", () => {
