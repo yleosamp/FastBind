@@ -10,7 +10,7 @@ if ($pilhaManifest.id -ne 'com.leoda.pilha.premiere' -or $pilhaManifest.entrypoi
 New-Item -ItemType Directory -Path $pilhaDist -Force | Out-Null
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-$pilhaRuntimeFiles = @('manifest.json','index.html','styles.css','main.js','core.js','host.js','library.js','view.js','locale.js','updates.js','LICENSE')
+$pilhaRuntimeFiles = @('manifest.json','index.html','styles.css','main.js','core.js','host.js','library.js','view.js','locale.js','updates.js','portable.js','vendor/fflate.js','vendor/FFLATE-LICENSE.txt','LICENSE')
 $pilhaRuntimeFiles += @(Get-ChildItem -LiteralPath (Join-Path $pilhaSource 'icons') -File | ForEach-Object { 'icons/' + $_.Name })
 $pilhaCcx = Join-Path $pilhaDist "FastBind-$($pilhaManifest.version).ccx"
 $pilhaZip = Join-Path $pilhaDist "FastBind-$($pilhaManifest.version)-codigo.zip"

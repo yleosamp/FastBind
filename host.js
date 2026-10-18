@@ -374,20 +374,103 @@ class Host {
       if (stage && !captured) await this.removeOwnedStage(ctx, stage);
     }
   }
+  async exportProfileProject(assets, destination, progress) {
+    const api = this.ppro;
+    if (typeof api.Project.createProject !== "function" || typeof api.Project.open !== "function") throw new Error("Esta versão do Premiere não permite preparar o perfil portátil.");
+    const original = await api.Project.getActiveProject();
+    const originalPath = original && original.path;
+    const originalSequence = original && await original.getActiveSequence();
+    if (original && !originalPath) throw new Error("Salve o projeto do Premiere primeiro.");
+    // Export's confirmation explicitly states this save. Never use saveAs on a
+    // user's Project: Premiere retargets that same handle to the new file.
+    if (original) must(await original.save(), "Não foi possível salvar o projeto antes da exportação.");
+    let isolated = null, closed = false;
+    const identities = Object.create(null), media = new Set();
+    try {
+      progress("Preparando projeto portátil separado…");
+      isolated = await api.Project.createProject(destination);
+      if (!isolated || projectPath(isolated.path) !== projectPath(destination) || original && guid(isolated.guid) === guid(original.guid))
+        throw new Error("O Premiere não criou o projeto portátil isolado.");
+      for (const asset of assets) {
+        await this.io.checkPayload(asset);
+        const before = new Set((await isolated.getSequences()).map(s => guid(s.guid)));
+        must(await isolated.importSequences(asset.file, [api.Guid.fromString(asset.sequenceId)]), "Premiere não importou o pacote salvo.");
+        const added = (await isolated.getSequences()).filter(s => !before.has(guid(s.guid)) && s.name === asset.sequenceName);
+        if (added.length !== 1) throw new Error("Não foi possível identificar com segurança a sequência importada. A edição não foi modificada.");
+        const scan = await this.stableScan(added[0]);
+        if (!C.sameClips(C.allClips(scan.data), asset.clips) || !sameTransitions(scan.data.transitions, asset.transitions))
+          throw new Error("O pacote importado difere do que foi salvo. Nenhum clipe foi inserido na edição.");
+        identities[asset.id] = { id: guid(added[0].guid), name: added[0].name };
+      }
+      // Imported root items contain only the requested sequences/dependencies,
+      // unlike the original stored snapshots (which contain the whole project).
+      const visit = async folder => {
+        for (const item of await folder.getItems()) {
+          let bin; try { bin = api.FolderItem.cast(item); } catch (_) {}
+          if (bin) { await visit(bin); continue; }
+          let clip; try { clip = api.ClipProjectItem.cast(item); } catch (_) {}
+          if (clip && !await clip.isSequence()) {
+            if (await clip.isOffline()) throw new Error("O perfil contém mídia offline. Reconecte a mídia antes de exportar.");
+            const path = await clip.getMediaFilePath();
+            if (path) media.add(path);
+          }
+        }
+      };
+      await visit(await isolated.getRootItem());
+      must(await isolated.save(), "Não foi possível salvar o projeto portátil.");
+      const options = new api.CloseProjectOptions(); options.setPromptIfDirty(false); options.setSaveWorkspace(false);
+      must(await isolated.close(options), "Não foi possível fechar o projeto portátil."); closed = true;
+      return { sequences: identities, media: Array.from(media) };
+    } finally {
+      if (isolated && !closed && projectPath(isolated.path) === projectPath(destination)) {
+        try { const options = new api.CloseProjectOptions(); options.setPromptIfDirty(false); options.setSaveWorkspace(false); await isolated.close(options); } catch (_) {}
+      }
+      this.cache.clear();
+      if (originalPath) {
+        const options = new api.OpenProjectOptions(); options.setAddToMRUList(false); options.setShowLocateFileDialog(false);
+        const restored = await api.Project.open(originalPath, options);
+        if (!restored || projectPath(restored.path) !== projectPath(originalPath)) throw new Error("Não foi possível reativar o projeto original. Abra-o pelo menu Arquivo; sua edição foi salva.");
+        if (originalSequence) {
+          const sequence = (await restored.getSequences()).find(s => guid(s.guid) === guid(originalSequence.guid));
+          if (sequence) await restored.setActiveSequence(sequence);
+        }
+      }
+    }
+  }
+  async checkPortableMedia(asset, sequence, initialScan) {
+    if (!asset.portable) return;
+    const allowed = new Set((asset.portableMedia || []).map(projectPath)), seen = new Set();
+    const visit = async (seq, scan) => {
+      const id = guid(seq.guid); if (seen.has(id)) return; seen.add(id);
+      for (const ref of scan.refs) {
+        if (ref.clip.adjustment) continue;
+        const item = this.ppro.ClipProjectItem.cast(await ref.item.getProjectItem());
+        if (!item) throw new Error("Não foi possível conferir as mídias do perfil importado. Nada foi inserido.");
+        if (await item.isSequence()) {
+          const nested = await item.getSequence(); await visit(nested,await this.stableScan(nested));
+        } else {
+          const path = await item.getMediaFilePath();
+          if (path && !(asset.portableGenerators || []).includes(path) && (!allowed.has(projectPath(path)) || await item.isOffline()))
+            throw new Error("O Premiere vinculou uma mídia fora do perfil importado. Nada foi inserido; as cópias da biblioteca foram preservadas.");
+        }
+      }
+    };
+    await visit(sequence,initialScan);
+  }
   async template(ctx, asset, progress) {
     const key = ctx.projectId + ":" + asset.id, cached = this.cache.get(key);
     if (cached) {
       try {
         const current = (await ctx.project.getSequences()).find(s => guid(s.guid) === guid(cached.sequence.guid));
         const reuse = current ? await this.reusable(current, cached.data, cached.stamp) : null;
-        if (reuse) return reuse;
+        if (reuse) { await this.checkPortableMedia(asset,reuse.sequence,reuse.scan); return reuse; }
       } catch (_) { /* Undo or external edits invalidate only the cache */ }
       this.cache.delete(key);
     }
     // After restarting the panel, an intact library sequence may already be
     // in the project. Reuse it only with both structure AND parameter evidence.
     const existing = (await ctx.project.getSequences()).filter(s => guid(s.guid) === asset.sequenceId && guid(s.guid) !== ctx.sequenceId);
-    if (existing.length === 1 && asset.parameterStamp && asset.parameterStamp.complete) {
+    if (!asset.portable && existing.length === 1 && asset.parameterStamp && asset.parameterStamp.complete) {
       const scan = await this.stableScan(existing[0]);
       if (C.sameClips(C.allClips(scan.data), asset.clips) && JSON.stringify(scan.data.transitions) === JSON.stringify(asset.transitions)) {
         const stamp = await this.parameterStamp(scan);
@@ -408,6 +491,7 @@ class Host {
     if (guid(sequence.guid) === ctx.sequenceId) throw new Error("A biblioteca não pode ser a própria sequência de destino.");
     const scan = await this.stableScan(sequence);
     if (!C.sameClips(C.allClips(scan.data), asset.clips) || JSON.stringify(scan.data.transitions) !== JSON.stringify(asset.transitions)) throw new Error("O pacote importado difere do que foi salvo. Nenhum clipe foi inserido na edição.");
+    await this.checkPortableMedia(asset,sequence,scan);
     await this.organize(ctx.project, imported);
     await this.restoreActive(ctx, sequence);
     this.cache.set(key, { sequence, data: scan.data, stamp: await this.parameterStamp(scan) });

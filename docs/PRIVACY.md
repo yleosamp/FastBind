@@ -21,7 +21,11 @@ The plugin's local data folder contains:
 - Minimal update-check timestamps and release information in `updates.json`.
 - Local error diagnostics, including a rolling history of up to 30 entries. These can contain project/sequence names, paths, clip information, timestamps and technical error details.
 
-FastBind does not collect the original source media into a portable bundle. Saved packages continue to reference external media and dependencies.
+Ordinary saved selections continue to reference external media. In 0.4.0, **Export profile** explicitly collects recognized media into a local `.fastbind` archive. It creates a separate Premiere project importing only the profile's library sequences/dependencies, rather than distributing the complete stored project snapshots. Export saves and restores the user's active project. No profile/media archive is uploaded automatically.
+
+The archive includes whole collected media files, editable native sequence/effect data, MOGRTs, clip/profile names and a requirements list. Source paths exposed as ordinary XML file references are replaced with transport tokens; caches/relative paths are cleared. Native opaque/binary metadata, third-party effects and MOGRTs can still contain private information or additional external references. This is not a forensic anonymizer: review content and licenses before sharing.
+
+Imported resources are checksum-verified, rebased and copied into a new private plugin data folder before the new profile is committed. The sender's archive is no longer needed afterward. Temporary export projects and files from interrupted imports may remain in private storage; they are never added as a usable profile unless validation/commit finishes. Fonts and installed plugins are not bundled. The first implementation limits archives and expanded contents to 256 MiB and refuses unsupported detected dependencies.
 
 ## Your controls
 
@@ -37,7 +41,11 @@ A consulta usa `https://api.github.com/repos/yleosamp/FastBind/releases/latest`,
 
 O arquivo local `updates.json` guarda apenas horários de consulta e informações mínimas de versão/link da release, separado da biblioteca. Clicar no aviso abre uma URL validada da release do FastBind no GitHub, no seu navegador. O acesso pelo navegador segue as políticas dele e do GitHub. O plugin não baixa/instala atualizações nem reinicia o Premiere automaticamente.
 
-A pasta de dados guarda perfis, nomes de pacotes/clipes, cores, caminhos, MOGRTs, preferência de idioma, registros de inserção e diagnósticos locais. Ao salvar uma seleção, ele também guarda uma **cópia do projeto `.prproj`**: esse arquivo pode conter informações de outras partes do projeto, não apenas dos clipes selecionados. A mídia original continua referenciada, não é coletada em um pacote portátil.
+A pasta de dados guarda perfis, nomes de pacotes/clipes, cores, caminhos, MOGRTs, preferência de idioma, registros de inserção e diagnósticos locais. Ao salvar uma seleção, ele também guarda uma **cópia do projeto `.prproj`**: esse arquivo pode conter informações de outras partes do projeto, não apenas dos clipes selecionados. A seleção salva normalmente continua referenciando a mídia original.
+
+Na 0.4.0, **Exportar perfil** coleta as mídias reconhecidas em um arquivo local `.fastbind`. É criado um projeto separado apenas com as sequências/dependências daquele perfil, sem distribuir o snapshot completo do projeto original. A operação salva e depois reativa o projeto atual. Não há upload automático. O pacote inclui mídias inteiras, nomes e metadados dos presets, MOGRTs e requisitos. Caminhos de arquivo expostos no XML são substituídos, mas dados binários/opacos de efeitos e MOGRTs ainda podem conter informações privadas e referências adicionais: não é uma ferramenta de anonimização. Confira o conteúdo e suas licenças antes de enviar.
+
+Na importação, os arquivos são conferidos e copiados para uma pasta privada nova antes de gravar o perfil; depois o pacote recebido pode ser apagado. Arquivos temporários de exportação/importações interrompidas podem ficar na pasta privada, sem virar perfis utilizáveis. Fontes e plugins não são incorporados. A primeira implementação limita pacote/conteúdo expandido a 256 MiB e recusa dependências incompatíveis detectadas.
 
 O histórico de erros mantém até 30 entradas e pode conter nomes, caminhos, horários e detalhes de clipes/projetos. Esses arquivos não são enviados automaticamente ao desenvolvedor.
 

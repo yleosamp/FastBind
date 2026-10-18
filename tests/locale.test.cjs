@@ -75,7 +75,7 @@ test("all source catalog keys have nonempty English values and matching interpol
   }
 });
 test("all literal backend errors/progress and direct UI translation calls have catalog entries", () => {
-  for (const file of ["main.js", "host.js", "library.js", "core.js"]) {
+  for (const file of ["main.js", "host.js", "library.js", "core.js", "portable.js"]) {
     const source = fs.readFileSync(path.join(__dirname, "..", file), "utf8");
     const patterns = [/(?:new Error|progress)\("((?:\\.|[^"\\])*)"\)/g, /must\([^\n]*,\s*"((?:\\.|[^"\\])*)"\)/g, /warning:\s*"((?:\\.|[^"\\])*)"/g];
     if (file === "main.js") patterns.push(/tr\("((?:\\.|[^"\\])*)"/g);

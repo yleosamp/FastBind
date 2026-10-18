@@ -9,11 +9,13 @@ const locale = I.create({ preference: "auto", hostLocale: I.detectHostLocale(uxp
 const tr = (text, vars) => locale.t(text, vars);
 let lastStatus = "Duplo clique no nome para inserir.", lastStatusType = "";
 const expanded = new Set(), rows = new Map(), disabled = new WeakSet();
+let drag = null, suppressInsertUntil = 0;
 const $ = id => document.getElementById(id);
 function status(text, type) { lastStatus = text; lastStatusType = type || ""; $("status").textContent = locale.message(text); $("status").className = lastStatusType; }
 function localize() {
   const labels = { save: "Salvar seleção", "new-profile": "+ Novo perfil", insert: "Inserir selecionado", "rename-item": "Renomear selecionado",
     "rename-profile": "Renomear perfil", "archive-item": "Remover selecionado", "restore-item": "Restaurar último removido",
+    "export-profile": "Exportar perfil…", "import-profile": "Importar perfil…",
     "language-label": "Idioma / Language", "language-auto": "Automático (Premiere)", "dialog-cancel": "Cancelar" };
   Object.keys(labels).forEach(id => { $(id).textContent = tr(labels[id]); });
   const titles = { "expand-all": "Expandir ou recolher todos", mogrt: "Adicionar MOGRT", "open-folder": "Local da biblioteca", "menu-toggle": "Opções", "search-clear": "Limpar busca", profile: "Perfil da biblioteca" };
@@ -115,7 +117,7 @@ function button(text, className, label, fn) {
   activate(node, fn); return node;
 }
 function controls() {
-  ["save", "mogrt", "profile", "new-profile", "menu-toggle", "open-folder", "expand-all", "search", "search-clear", "language-pt", "language-en", "language-auto"].forEach(id => disable($(id), busy || !ready));
+  ["save", "mogrt", "profile", "new-profile", "menu-toggle", "open-folder", "expand-all", "search", "search-clear", "language-pt", "language-en", "language-auto", "export-profile", "import-profile"].forEach(id => disable($(id), busy || !ready));
   disable($("insert"), busy || !ready || !currentItem());
   disable($("check-updates"), busy || !ready || !updatesReady || updateChecking);
   disable($("update-available"), busy || !ready || updateOpening || !availableUpdate());
@@ -187,8 +189,91 @@ function drawContents(item, target) {
   });
   if (item.type === "mogrt") target.appendChild(element("div", "mogrt-note", tr("O conteúdo interno é definido pelo template.")));
   else if (!groups.length) target.appendChild(element("div", "mogrt-note", tr("Nenhum clipe listado neste pacote.")));
+  const destinations = library.data.profiles.filter(p => p.id !== library.profile().id);
+  if (item.requirements && item.requirements.length) {
+    target.appendChild(button(tr("Ver requisitos…"), "move-item", tr("Fontes e efeitos necessários"), () => run(async () => {
+      await ask("Requisitos do perfil", "", item.requirements.join("\n"), "info");
+    })));
+  }
+  if (destinations.length) {
+    const choices = element("div", "move-targets"); choices.hidden = true;
+    const move = button(tr("Mover para perfil…"), "move-item", tr("Mover para outro perfil"), () => {
+      if (!busy) { choices.hidden = !choices.hidden; move.setAttribute("aria-expanded", String(!choices.hidden)); }
+    });
+    move.setAttribute("aria-expanded", "false");
+    destinations.forEach(profile => choices.appendChild(button(profile.name, "menu-entry", profile.name, () => run(async () => {
+      const oldKey = key(item.id); await library.moveItem(item.id, profile.id);
+      expanded.delete(oldKey); selected = null;
+      status(tr("Seleção movida para {name}.", { name: profile.name }), "success");
+    }))));
+    target.appendChild(move); target.appendChild(choices);
+  }
+}
+function clearDrag() {
+  if (drag && drag.slot && drag.slot.parentElement) drag.slot.parentElement.removeChild(drag.slot);
+  $("list").removeAttribute("data-reordering");
+  rows.forEach(ref => { ref.row.style.transform = ""; ref.row.removeAttribute("data-drop"); ref.row.removeAttribute("data-dragging"); });
+  drag = null;
+}
+function startDrag(item, event) {
+  if (busy || event.button !== 0) return;
+  drag = { id: item.id, profile: library.profile().id, x: event.clientX, y: event.clientY, active: false, target: null };
+}
+function moveDrag(event) {
+  if (!drag || busy) return;
+  if (typeof event.buttons === "number" && event.buttons === 0) { clearDrag(); return; }
+  if (!drag.active && Math.abs(event.clientX - drag.x) + Math.abs(event.clientY - drag.y) < 6) return;
+  event.preventDefault();
+  suppressInsertUntil = Date.now() + 600;
+  const scroller = $("scroller");
+  if (!drag.active) {
+    // Measure once, before any transforms. Pointer movement then uses only
+    // cached geometry + scroll offset; no rebuild, timers or native host calls.
+    drag.active = true; drag.scroll = scroller.scrollTop;
+    drag.bounds = scroller.getBoundingClientRect();
+    drag.listTop = $("list").getBoundingClientRect().y + drag.scroll;
+    drag.entries = Array.from(rows.entries()).map(([id,ref]) => {
+      const box = ref.row.getBoundingClientRect(); return { id, row: ref.row, top: box.y + drag.scroll, height: box.height };
+    });
+    drag.sourceIndex = drag.entries.findIndex(entry => entry.id === drag.id);
+    const source = drag.entries[drag.sourceIndex], next = drag.entries[drag.sourceIndex + 1], previous = drag.entries[drag.sourceIndex - 1];
+    drag.span = source.height + Math.max(0,next ? next.top - source.top - source.height : previous ? source.top - previous.top - previous.height : 5);
+    drag.remaining = drag.entries.filter(entry => entry.id !== drag.id).map(entry => Object.assign({},entry, {
+      compactTop: entry.top - (entry.top > source.top ? drag.span : 0)
+    }));
+    drag.slot = element("div", "drag-slot"); drag.slot.setAttribute("aria-hidden","true");
+    drag.slot.style.height = source.height + "px"; $("list").appendChild(drag.slot);
+    $("list").setAttribute("data-reordering","true"); source.row.setAttribute("data-dragging","true");
+  }
+  const rect = drag.bounds;
+  if (event.clientY < rect.y + 28) scroller.scrollTop -= 16;
+  else if (event.clientY > rect.y + rect.height - 28) scroller.scrollTop += 16;
+  const contentY = event.clientY + scroller.scrollTop, list = drag.remaining;
+  let at = list.findIndex(entry => contentY < entry.compactTop + entry.height / 2);
+  if (at < 0) at = list.length;
+  drag.target = list.length ? at < list.length ? {id:list[at].id,after:false} : {id:list[list.length-1].id,after:true} : null;
+  if (drag.previewIndex !== at) {
+    drag.previewIndex = at;
+    drag.entries.forEach((entry,index) => {
+      if (index === drag.sourceIndex) return;
+      const shift = at < drag.sourceIndex && index >= at && index < drag.sourceIndex ? drag.span :
+        at > drag.sourceIndex && index > drag.sourceIndex && index <= at ? -drag.span : 0;
+      entry.row.style.transform = "translateY(" + shift + "px)";
+    });
+    const source = drag.entries[drag.sourceIndex];
+    const top = at < list.length ? list[at].compactTop : list.length ? list[list.length-1].compactTop + list[list.length-1].height + (drag.span-source.height) : source.top;
+    drag.slot.style.top = (top-drag.listTop) + "px";
+  }
+  drag.entries[drag.sourceIndex].row.style.transform = "translateY(" + (contentY-drag.y-drag.scroll) + "px)";
+}
+function finishDrag() {
+  const dropped = drag; clearDrag();
+  if (!dropped || !dropped.active || !dropped.target || dropped.profile !== library.profile().id) return;
+  if (dropped.previewIndex === dropped.sourceIndex) return;
+  run(async () => { await library.reorderItem(dropped.id, dropped.target.id, dropped.target.after); status("Ordem salva.", "success"); });
 }
 function render() {
+  clearDrag();
   const scroll = $("scroller").scrollTop || 0, profile = library.profile();
   $("profile").textContent = profile.name; $("profile").title = tr("Perfil: {name}", { name: profile.name });
   $("search-clear").hidden = !$("search").value;
@@ -217,7 +302,8 @@ function render() {
     if (item.color !== null) chip.style.backgroundColor = V.itemColor(item);
     color.appendChild(chip); color.setAttribute("aria-expanded", String(paletteFor === item.id));
     const name = element("div", "item-name", item.name);
-    name.title = [item.name, V.duration(item.duration), item.warnings ? item.warnings.join(" ") : ""].filter(Boolean).join(" • ");
+    name.addEventListener("mousedown", event => startDrag(item, event));
+    name.title = [item.name, tr("Arraste o nome para reordenar."), V.duration(item.duration), item.warnings ? item.warnings.join(" ") : ""].filter(Boolean).join(" • ");
     const actions = element("div", "item-actions");
     const insertButton = button(tr("Inserir"), "row-insert", tr("Inserir {name}", { name: item.name }), () => { selectRow(item.id); run(insert); });
     const remove = button(tr("Remover"), "row-remove", tr("Remover {name} da biblioteca (recuperável)", { name: item.name }), () => run(async () => {
@@ -232,7 +318,7 @@ function render() {
     const contents = element("div", "item-contents");
     row.appendChild(head); row.appendChild(palette); row.appendChild(contents);
     row.addEventListener("click", () => { if (!busy) { closePopups(); selectRow(item.id); } });
-    head.addEventListener("dblclick", e => { e.stopPropagation(); if (!busy) { selectRow(item.id); run(insert); } });
+    head.addEventListener("dblclick", e => { e.stopPropagation(); if (!busy && Date.now() >= suppressInsertUntil) { selectRow(item.id); run(insert); } });
     head.addEventListener("keydown", e => {
       if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); if (!e.repeat && !busy) { selectRow(item.id); run(insert); } }
     });
@@ -245,6 +331,7 @@ function render() {
 }
 async function run(fn) {
   if (busy || !ready) return;
+  clearDrag();
   busy = true; closePopups(); controls();
   try { await fn(); }
   catch (error) {
@@ -310,6 +397,12 @@ async function insert() {
   else status(tr("Inserido • {count} clipes em faixas livres.", { count: result.count }) + (item.warnings ? tr(" Confira os fades nativos deste pacote.") : ""), "success");
 }
 function bind() {
+  if (typeof document.addEventListener === "function") {
+    document.addEventListener("mousemove", moveDrag);
+    document.addEventListener("mouseup", finishDrag);
+    document.addEventListener("keydown", event => { if (event.key === "Escape") clearDrag(); });
+    document.addEventListener("visibilitychange", () => { if (document.hidden) clearDrag(); });
+  }
   activate($("check-updates"), () => checkUpdates(true));
   activate($("update-available"), openUpdate);
   activate($("profile"), () => {
@@ -330,6 +423,30 @@ function bind() {
     rows.forEach((_, id) => toggleItem(id, open));
   });
   activate($("insert"), () => run(insert));
+  activate($("export-profile"), () => run(async () => {
+    closePopups();
+    if (!library.profile().items.length) throw new Error("Este perfil está vazio.");
+    const yes = await ask("Exportar perfil", "", tr("Inclui mídias e MOGRTs, mantendo os presets editáveis. Fontes e plugins externos devem ser instalados separadamente. Salva o projeto atual e prepara um projeto temporário separado. Limite do pacote: 256 MB."), true);
+    if (!yes) return;
+    const name = library.profile().name.replace(/[^a-z0-9 _-]/gi,"_");
+    const file = await uxp.storage.localFileSystem.getFileForSaving(name + ".fastbind", { types: ["fastbind"] });
+    if (!file) return;
+    const sharing = require("./portable.js");
+    await sharing.exportProfile(io,host,library.profile(),file,status);
+    status("Perfil exportado com mídias.", "success");
+  }));
+  activate($("import-profile"), () => run(async () => {
+    closePopups();
+    const file = await uxp.storage.localFileSystem.getFileForOpening({ types: ["fastbind"], allowMultiple: false });
+    if (!file) return;
+    const sharing = require("./portable.js");
+    // Validate first, without turning optional font/effect metadata into a gate.
+    await sharing.inspectArchive(io,file);
+    const yes = await ask("Importar perfil", "", tr("As mídias serão copiadas para a biblioteca. Depois você poderá apagar o pacote recebido."), true);
+    if (!yes) return;
+    await sharing.importProfile(io,library,file,status); selected = null;
+    status("Perfil importado. Você já pode apagar o pacote recebido.", "success");
+  }));
   activate($("new-profile"), () => run(async () => {
     const name = await ask("Novo perfil", "", "Ex.: Transições, Zooms ou SFX");
     if (name) { await library.addProfile(name); selected = null; }

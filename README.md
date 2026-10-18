@@ -4,7 +4,7 @@ A small, open-source library panel for Adobe Premiere Pro. Save adjustment layer
 
 **Experimental · Premiere Pro 26.3+ · English / Português · MIT**
 
-[Download CCX — Windows & macOS](https://github.com/yleosamp/FastBind/releases/download/v0.3.3/FastBind-0.3.3.ccx) · [Releases](https://github.com/yleosamp/FastBind/releases/latest) · [English](#install) · [Português](#português) · [Changelog](CHANGELOG.md) · [Privacy](docs/PRIVACY.md)
+[Download CCX — Windows & macOS](https://github.com/yleosamp/FastBind/releases/download/v0.4.2/FastBind-0.4.2.ccx) · [Releases](https://github.com/yleosamp/FastBind/releases/latest) · [English](#install) · [Português](#português) · [Changelog](CHANGELOG.md) · [Privacy](docs/PRIVACY.md)
 
 ![FastBind panel with example packages](docs/images/fastbind.png)
 
@@ -37,6 +37,16 @@ Clicking the badge opens the release page in your browser, where you can downloa
 
 Use **+ MOGRT** to add a template. The profile selector switches libraries and creates new profiles. Expand a package to see its video/audio clips; click its color square to change its color. Search matches both package and clip names.
 
+Drag the **preset name** up/down to reorder. Expand a preset and choose **Move to profile…** to move it without re-saving its contents.
+
+### Sharing profiles (0.4+)
+
+In Settings, choose **Export profile…** to create a `.fastbind` archive. Export saves the current Premiere project, prepares a separate project containing only this profile's library sequences, and collects their media. It does not send the full original project snapshots. MOGRTs and a bilingual `requirements.txt` are included.
+
+Your friend chooses **Import profile…**. Resources are verified and copied into their private plugin library; a new independent profile is committed only after the copies succeed. They can delete the received archive afterward. Same-named profiles are kept separately. Expand an imported preset and choose **View requirements…** to reopen its requirements.
+
+**Initial limits:** 256 MiB for both the archive and expanded files, 32 MiB project XML, 2,048 entries. Media is collected whole, not trimmed. Font/plugin binaries and licenses are not included; install them separately. Only exposed effect/font names can be listed automatically. Opaque effect data and MOGRTs may reference additional resources Premiere does not expose. Dynamic Link, detected image sequences and unrecognized external dependencies stop export rather than producing a knowingly incomplete package. Review third-party media/preset licenses before sharing. Native export/import still needs user acceptance testing in Premiere; automated tests do not prove Adobe's native behavior.
+
 **Remove** archives an item rather than deleting its saved files. Restore it with **Settings > Restore last removed**. Settings also provide **English**, **Português** and **Automatic (Premiere)**. Automatic uses Portuguese for a Portuguese Premiere UI and English otherwise.
 
 The playhead position inside a selection becomes its insertion anchor; if the playhead is outside, the package starts at its earliest selected clip. This is useful for aligning a transition's impact.
@@ -45,7 +55,7 @@ The playhead position inside a selection becomes its insertion anchor; if the pl
 
 - FastBind plans video above occupied video tracks and audio below occupied audio tracks across the package's full span. It does not intentionally ripple or overwrite existing clips. Native API failures remain possible: keep project backups and review the result.
 - Packages retain native Premiere clips/effects through an internal library sequence and a saved project copy. They are **not** `.prfpset` effect presets applied directly to a selected clip.
-- Original audio/video files, fonts, LUTs and third-party effects are **not collected**. Keep those dependencies installed and at their existing locations. MOGRT files themselves are copied into the library.
+- Ordinary saved selections reference the original audio/video files; keep them available. **Export profile** collects recognized media/file dependencies for sharing, subject to the limits above. Fonts and third-party effect binaries are never collected. MOGRT files themselves are copied into the library.
 - Unknown native fades/transitions may require confirmation when saving. They cannot always be inspected or reproduced through the available API. Masks, links, easing and third-party effect compatibility are not universally verified.
 - Old or unverified insertion records never block another insert or require Undo. After Premiere accepts a transaction, post-insert readback differences remain local diagnostics only, without a red error or retry prompt. An unverified result is not marked verified. Preparation, occupancy and actual native commit errors still report normally; FastBind never undoes or retries automatically.
 - Global keyboard shortcuts per package are not implemented. Use Insert or double-click.
@@ -54,7 +64,7 @@ The folder button shows the local library location. Back up that **entire folder
 
 ## Development
 
-Node.js is needed only for development. The runtime has no npm dependencies or telemetry. Its only network request checks the public FastBind release metadata on GitHub; no account or token is required.
+Node.js is needed only for development; users do not need npm. The runtime vendors fflate 0.8.2 (MIT) for local archive/gzip processing and has no telemetry. Its only network request checks the public FastBind release metadata on GitHub; no account or token is required.
 
 ```sh
 npm run check
@@ -63,7 +73,7 @@ npm test
 
 The test suite covers planning, storage, simulated Premiere integration, recovery, localization and panel events. Optional `tools/preview.cjs` checks the real panel code in an isolated headless browser with a simulated host. These checks do not prove Adobe's native UXP rendering or every Premiere workflow; no production timeline is automated for testing.
 
-Runtime modules: `core.js` (planning), `host.js` (Premiere integration), `library.js` (local storage), `main.js` (panel), `view.js` (presentation), `locale.js` (language), `updates.js` (release notifications).
+Runtime modules: `core.js` (planning), `host.js` (Premiere integration), `library.js` (local storage), `main.js` (panel), `view.js` (presentation), `locale.js` (language), `updates.js` (release notifications), `portable.js` (profile transport), `vendor/fflate.js` (MIT compression library).
 
 ## License
 
@@ -97,8 +107,14 @@ Selecione os adjustment layers e áudios na timeline, clique **Salvar seleção*
 
 **+ MOGRT** adiciona templates. O seletor de perfis organiza bibliotecas separadas. A setinha mostra os clipes salvos; o quadradinho muda a cor. A busca encontra nomes de pacotes e de clipes. **Remover** arquiva o item; a engrenagem permite restaurar o último removido e trocar o idioma.
 
+Arraste o **nome do preset** para cima/baixo para ordenar. Abra a setinha e use **Mover para perfil…** para transferir a seleção inteira.
+
+Desde a versão 0.4.0, a engrenagem oferece **Exportar perfil…** e **Importar perfil…**. O arquivo `.fastbind` inclui o projeto separado das seleções, mídias e MOGRTs; na importação tudo é copiado para a biblioteca, permitindo apagar o pacote recebido. Fontes e efeitos externos precisam ser instalados separadamente. A exportação salva o projeto atual e prepara um projeto temporário separado, sem enviar o snapshot inteiro do projeto original.
+
+**Limites iniciais:** 256 MiB para pacote e conteúdo descompactado, XML do projeto até 32 MiB e 2.048 entradas. As mídias vão inteiras. Dynamic Link, sequências de imagens detectadas e dependências de arquivo não reconhecidas interrompem a exportação; não são omitidas silenciosamente. Dados opacos de efeitos/MOGRTs podem exigir recursos adicionais não expostos pelo Premiere. Os requisitos podem ser reabertos na setinha do preset importado. Confira as licenças antes de compartilhar. Os testes automatizados não substituem a validação nativa no Premiere.
+
 O pacote é inserido acima do vídeo ocupado e abaixo do áudio ocupado, sem ripple intencional. Revise o resultado e mantenha backups: nenhuma integração está imune a falhas do Premiere.
 
 Registros antigos ou não verificados não travam mais o próximo insert nem exigem Ctrl+Z. Quando o Premiere aceita a inserção, diferenças na conferência posterior ficam somente no diagnóstico local, sem erro vermelho ou pedido para reinserir. Isso não transforma um resultado não verificado em verificado. As checagens de faixas ocupadas e erros reais de preparação/execução continuam; não há Undo nem repetição automática.
 
-**Importante:** mídias originais, fontes e plugins externos continuam sendo necessários. A biblioteca não é um pacote portátil completo, nem um importador de presets `.prfpset`. Ela guarda cópias de projetos que podem conter informações privadas. Faça backup da pasta completa mostrada no ícone de pasta e não publique esses arquivos. Leia [Privacidade](docs/PRIVACY.md#português).
+**Importante:** seleções salvas normalmente continuam referenciando as mídias originais. Use a exportação de perfil para coletar mídias compatíveis ao compartilhar; não envie a pasta inteira da biblioteca. Fontes/plugins externos continuam necessários. Não é um importador de presets `.prfpset`. A biblioteca guarda cópias de projetos que podem conter informações privadas. Faça backup da pasta completa mostrada no ícone de pasta e não publique esses arquivos. Leia [Privacidade](docs/PRIVACY.md#português).

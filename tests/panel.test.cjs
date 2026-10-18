@@ -55,6 +55,7 @@ async function panel(options = {}) {
     profile() { return data.profiles.find(p => p.id === data.active); }
     async select(id) { data.active = id; }
     async add(item) { this.profile().items.push(item); }
+    async moveItem(id,dest) { const p=this.profile(),i=p.items.findIndex(x=>x.id===id);data.profiles.find(p=>p.id===dest).items.push(p.items.splice(i,1)[0]); }
     async setColor(id, value) { if (options.colorError) throw new Error('disco cheio'); this.profile().items.find(a => a.id === id).color = value; }
     async archive(id) { const p = this.profile(); const n = p.items.findIndex(a => a.id === id); data.trash = [{ profileId: p.id, item: p.items.splice(n, 1)[0] }]; }
     async restoreLast() { const last = data.trash.pop(); data.profiles.find(p => p.id === last.profileId).items.push(last.item); }
@@ -91,16 +92,42 @@ async function panel(options = {}) {
   }
   if (options.items) data.profiles[0].items = options.items;
   const context = { document: { getElementById: id => elements[id], createElement: tag => new Element(tag) }, console: { error() {} },
-    require(name) { if (name === 'uxp') return { shell: { async openExternal(url, reason) { opened.push({ url, reason }); return options.openError || ''; } }, host: { uiLocale: options.hostLocale === undefined ? 'pt_BR' : options.hostLocale }, entrypoints: { setup() {} } }; if (name === 'premierepro') return {};
+    require(name) { if (name === 'uxp') return { storage: options.storage || {}, shell: { async openExternal(url, reason) { opened.push({ url, reason }); return options.openError || ''; } }, host: { uiLocale: options.hostLocale === undefined ? 'pt_BR' : options.hostLocale }, entrypoints: { setup() {} } }; if (name === 'premierepro') return {};
       if (name === './core.js') return require('../core.js'); if (name === './library.js') return { Library, UxpIO };
       if (name === './view.js') return require('../view.js');
       if (name === './locale.js') return require('../locale.js');
       if (name === './manifest.json') return require('../manifest.json');
       if (name === './updates.js') return { UpdateChecker, releaseURL: require('../updates.js').releaseURL };
+      if (name === './portable.js' && options.sharing) return options.sharing;
       if (name === './host.js') return { Host }; throw new Error(name); } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8'), context);
   await settle(); return { elements, calls, host, data, captures, diagnostics, updateCalls, opened };
 }
+test('move action stays hidden until expanded, moves the complete selection without calling Premiere', async () => {
+  const f=await panel(),row=f.elements.list.children[0];
+  assert.equal(row.children[2].hidden,true);
+  row.children[0].children[0].click();
+  const contents=row.children[2],move=contents.children.find(n=>n.textContent==='Mover para perfil…');
+  assert.ok(move);move.click();const choices=contents.children.at(-1);assert.equal(choices.hidden,false);
+  choices.children[0].click();await settle();
+  assert.equal(f.data.profiles[0].items.length,0);assert.equal(f.data.profiles[1].items[0].id,'zoom');assert.deepEqual(f.calls,[]);
+});
+test('imported preset exposes requirements only in expanded contents and opens an information dialog',async()=>{
+  const f=await panel({items:[{id:'foreign',name:'Friend',type:'mogrt',file:'/private/logo.mogrt',requirements:['Font: Barlow','Effect: Deep Glow']}]}),row=f.elements.list.children[0];
+  row.children[0].children[0].click();
+  const requirements=row.children[2].children.find(n=>n.textContent==='Ver requisitos…');assert.ok(requirements);requirements.click();await settle();
+  assert.equal(f.elements['dialog-label'].textContent,'Requisitos do perfil');assert.match(f.elements['dialog-hint'].textContent,/Barlow/);
+  f.elements['dialog-ok'].click();await settle();assert.deepEqual(f.calls,[]);
+});
+test('profile import confirmation does not display or gate on installed plugin/font requirements',async()=>{
+  let imported=0;
+  const f=await panel({storage:{localFileSystem:{async getFileForOpening(){return {};}}},sharing:{async inspectArchive(){return {manifest:{requirements:['Requires Deep Glow','Requires Barlow']}};},async importProfile(){imported++;}}});
+  f.elements['import-profile'].click();await settle();
+  assert.equal(f.elements['dialog-label'].textContent,'Importar perfil');
+  assert.equal(f.elements['dialog-hint'].textContent,'As mídias serão copiadas para a biblioteca. Depois você poderá apagar o pacote recebido.');
+  f.elements['dialog-ok'].click();await settle();
+  assert.equal(imported,1);assert.deepEqual(f.calls,[]);
+});
 test('painel inicia enxuto; inserir só habilita depois de selecionar item', async () => {
   const f = await panel(), e = f.elements;
   assert.equal(e.list.children.length, 1); assert.equal(e.insert.disabled, true);

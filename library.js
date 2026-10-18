@@ -62,6 +62,40 @@ class Library {
     d.profiles.find(p => p.id === d.active).name = n;
   }); }
   async add(item) { await this.mutate(d => d.profiles.find(p => p.id === d.active).items.push(item)); }
+  async reorderItem(id, targetId, after) {
+    if (id === targetId) return;
+    await this.mutate(d => {
+      const items = d.profiles.find(p => p.id === d.active).items;
+      const from = items.findIndex(x => x.id === id);
+      if (from < 0 || !items.some(x => x.id === targetId)) throw new Error("Item não encontrado.");
+      const item = items.splice(from, 1)[0];
+      items.splice(items.findIndex(x => x.id === targetId) + (after ? 1 : 0), 0, item);
+    });
+  }
+  async moveItem(id, profileId) {
+    await this.mutate(d => {
+      const from = d.profiles.find(p => p.id === d.active), to = d.profiles.find(p => p.id === profileId);
+      if (!to) throw new Error("Perfil não encontrado.");
+      if (to.id === from.id) return;
+      const index = from.items.findIndex(x => x.id === id);
+      if (index < 0) throw new Error("Item não encontrado.");
+      if (to.items.some(x => x.id === id)) throw new Error("O item já existe no perfil de destino.");
+      to.items.push(from.items.splice(index, 1)[0]);
+    });
+  }
+  async importProfile(profile) {
+    const imported = JSON.parse(JSON.stringify(profile));
+    if (!imported || !Array.isArray(imported.items)) throw new Error("Perfil inválido.");
+    imported.name = core.name(imported.name);
+    imported.id = core.uid();
+    imported.items.forEach(item => { item.id = core.uid(); });
+    await this.mutate(d => {
+      const base = imported.name; let n = 2;
+      while (d.profiles.some(p => p.name.toLowerCase() === imported.name.toLowerCase())) imported.name = core.name(base.slice(0, 90) + " (" + n++ + ")");
+      d.profiles.push(imported); d.active = imported.id;
+    });
+    return this.profile();
+  }
   async renameItem(id, value) { const n = core.name(value); await this.mutate(d => {
     const item = d.profiles.find(p => p.id === d.active).items.find(a => a.id === id);
     if (!item) throw new Error("Item não encontrado."); item.name = n;

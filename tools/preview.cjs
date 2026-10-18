@@ -53,6 +53,7 @@ const data = { active: 'main', profiles: [{ id: 'main', name: 'MAIN', items: [
         return { ok: true, status: 200, async json() { return window.previewRelease; } };
       };
       window.previewSettings = () => io.readJSON('settings.json');
+      window.previewRevision = () => Math.max(...Array.from(io.files.entries()).filter(([n])=>/^library-[ab]\.json$/.test(n)).map(([,v])=>JSON.parse(v).revision));
       class Library extends RealLibrary { constructor() { super(io); } }
       class UxpIO {
         async init() { this.root = { nativePath: 'Prévia isolada, em memória' }; return this; }
@@ -168,6 +169,52 @@ const data = { active: 'main', profiles: [{ id: 'main', name: 'MAIN', items: [
     assert.deepEqual(await page.evaluate(() => window.previewCalls), ['hit', 'hit', 'hit']);
     assert.deepEqual(errors, []);
     await page.screenshot({ path: path.join(output, screenshotName('nonblocking-pt')) });
+    // Actual pointer drag on actual main/library modules, with persistence.
+    await page.setViewportSize({ width: 1050, height: 1100 });
+    await page.locator('#scroller').evaluate(el=>{el.scrollTop=0;});
+    const sourceBox=await page.locator('[data-id="goal"] .item-name').boundingBox();
+    const targetBox=await page.locator('[data-id="slow"]').boundingBox();
+    const beforeDragRevision=await page.evaluate(()=>window.previewRevision());
+    await page.mouse.move(sourceBox.x+30,sourceBox.y+sourceBox.height/2);await page.mouse.down();
+    await page.mouse.move(targetBox.x+120,targetBox.y+3,{steps:8});
+    assert.equal(await page.evaluate(()=>window.previewRevision()),beforeDragRevision,'Preview cannot write the library before release');
+    assert.equal(await page.locator('.item').first().getAttribute('data-id'),'slow','Preview does not rebuild/reorder DOM');
+    assert(await page.locator('.drag-slot').isVisible());
+    assert.notEqual(await page.locator('[data-id="slow"]').evaluate(el=>el.style.transform),'translateY(0px)');
+    await page.screenshot({path:path.join(output,screenshotName('arrastando')),animations:'disabled'});
+    await page.mouse.up();
+    await page.waitForFunction(()=>document.querySelector('.item').getAttribute('data-id')==='goal');
+    assert.equal(await page.evaluate(()=>window.previewRevision()),beforeDragRevision+1);
+    assert.equal(await page.locator('.drag-slot').count(),0);
+    // Cancel returns to the old layout with no journal write and no insert.
+    const cancelSource=await page.locator('[data-id="slow"] .item-name').boundingBox();
+    const cancelTarget=await page.locator('[data-id="goal"]').boundingBox();
+    await page.mouse.move(cancelSource.x+30,cancelSource.y+cancelSource.height/2);await page.mouse.down();
+    await page.mouse.move(cancelTarget.x+100,cancelTarget.y+3,{steps:6});
+    await page.keyboard.press('Escape');await page.mouse.up();
+    assert.equal(await page.locator('.drag-slot').count(),0);
+    assert.equal(await page.evaluate(()=>window.previewRevision()),beforeDragRevision+1);
+    assert.equal(await page.locator('.item').first().getAttribute('data-id'),'goal');
+    // Downward preview shifts just the crossed rows; cancel stays memory-only.
+    const downSource=await page.locator('[data-id="goal"] .item-name').boundingBox();
+    const downTarget=await page.locator('[data-id="hit"]').boundingBox();
+    await page.mouse.move(downSource.x+30,downSource.y+downSource.height/2);await page.mouse.down();
+    await page.mouse.move(downTarget.x+100,downTarget.y+8,{steps:7});
+    assert.equal(await page.locator('[data-id="slow"]').evaluate(el=>el.style.transform.startsWith('translateY(-')),true);
+    assert.equal(await page.evaluate(()=>window.previewRevision()),beforeDragRevision+1);
+    await page.keyboard.press('Escape');await page.mouse.up();
+    assert.equal(await page.locator('.drag-slot').count(),0);
+    assert.equal(await page.locator('[data-id="slow"]').evaluate(el=>el.style.transform),'');
+    assert.deepEqual(await page.evaluate(()=>window.previewCalls),['hit','hit','hit']);
+    await page.locator('[data-id="goal"] .chevron-button').click();
+    await page.locator('[data-id="goal"] .move-item').click();
+    await page.screenshot({path:path.join(output,screenshotName('mover-perfil'))});
+    await page.locator('[data-id="goal"] .move-targets .button').click();
+    await page.waitForFunction(()=>!document.querySelector('[data-id="goal"]'));
+    await page.locator('#profile').click();await page.locator('[data-profile="sfx"]').click();
+    await page.locator('[data-id="goal"]').waitFor();
+    assert.equal(await page.locator('.item').count(),1);assert.deepEqual(await page.evaluate(()=>window.previewCalls),['hit','hit','hit']);
+    assert.deepEqual(errors,[]);
     console.log(JSON.stringify({ screenshots: output, errors, nativePremiereUsed: false, actualMainJs: true }));
   } finally { await browser.close(); }
 })().catch(e => { console.error(e); process.exitCode = 1; });
